@@ -1,5 +1,11 @@
-﻿cmake_minimum_required(VERSION 3.20)
-project(EmperLabs LANGUAGES CXX)
+﻿add_library(emper-module-uniform-grid
+    uniform-grid/UniformGrid.cpp
+)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+target_include_directories(emper-module-uniform-grid PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/uniform-grid
+)
+
+target_link_libraries(emper-module-uniform-grid PUBLIC
+    emper-engine
+)
