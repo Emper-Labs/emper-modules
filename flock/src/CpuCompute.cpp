@@ -1,3 +1,5 @@
+#include "CpuCompute.h"
+
 #include "Flock.h"
 
 #include <UniformGrid.h>
@@ -43,8 +45,12 @@ void validate(const FlockConfig& config)
 {
     if (config.worldWidth <= 0.0f || config.worldHeight <= 0.0f)
         throw std::invalid_argument("Flock world dimensions must be positive");
-    if (config.maxSpeed <= 0.0f || config.maxForce <= 0.0f || config.initialSpeed <= 0.0f)
-        throw std::invalid_argument("Flock speed and force values must be positive");
+    if (config.maxSpeed <= 0.0f || config.maxForce <= 0.0f ||
+        config.initialSpeed <= 0.0f)
+    {
+        throw std::invalid_argument(
+            "Flock speed and force values must be positive");
+    }
     if (config.perceptionRadius <= 0.0f || config.separationRadius <= 0.0f)
         throw std::invalid_argument("Flock radii must be positive");
     if (config.teamCount == 0)
@@ -53,15 +59,14 @@ void validate(const FlockConfig& config)
 
 } // namespace
 
-class Flock::Impl
+class FlockCpuCompute::Impl
 {
 public:
-    Impl(simulation::world::World& world, const FlockConfig& config)
-        : world_(world), config_(config), computeMode_(interfaces::module::ComputeMode::CPU)
+    Impl(simulation::world::World& world, FlockConfig& config)
+        : world_(world), config_(config)
     {
         validate(config_);
 
-        // No GPU compute backend exists yet, so Auto and GPU use the CPU path.
         world_.registerType<Boid>()
             .field<&Boid::position>()
             .field<&Boid::velocity>()
@@ -69,26 +74,6 @@ public:
 
         world_.reserve<Boid>(config_.boidCount);
         spawn();
-    }
-
-    void spawn()
-    {
-        std::mt19937 rng(config_.randomSeed);
-        std::uniform_real_distribution<f32> positionX(0.0f, config_.worldWidth);
-        std::uniform_real_distribution<f32> positionY(0.0f, config_.worldHeight);
-        std::uniform_real_distribution<f32> angle(0.0f, Pi2);
-
-        for (std::size_t i = 0; i < config_.boidCount; ++i)
-        {
-            auto boid = world_.create<Boid>();
-            const f32 direction = angle(rng);
-            boid.set<&Boid::position>({ positionX(rng), positionY(rng) });
-            boid.set<&Boid::velocity>({
-                std::cos(direction) * config_.initialSpeed,
-                std::sin(direction) * config_.initialSpeed
-            });
-            boid.set<&Boid::team>(i % config_.teamCount);
-        }
     }
 
     void tick(f32 dt)
@@ -104,15 +89,11 @@ public:
         if (count == 0)
             return;
 
-        if (gridWidth_ != config_.worldWidth || gridHeight_ != config_.worldHeight)
-        {
-            grid_.resize(config_.worldWidth, config_.worldHeight, config_.perceptionRadius);
-            gridWidth_ = config_.worldWidth;
-            gridHeight_ = config_.worldHeight;
-        }
+        resizeGridIfNeeded();
         grid_.rebuild(positions.data(), count);
 
-        const f32 separationRadiusSquared = config_.separationRadius * config_.separationRadius;
+        const f32 separationRadiusSquared =
+            config_.separationRadius * config_.separationRadius;
         const f32 minimumSpeed = config_.initialSpeed * 0.75f;
         const f32 minimumSpeedSquared = minimumSpeed * minimumSpeed;
         const f32 maximumSpeedSquared = config_.maxSpeed * config_.maxSpeed;
@@ -134,13 +115,18 @@ public:
             std::size_t sameTeamNeighbours = 0;
 
             grid_.query(
-                px, py, config_.perceptionRadius, config_.maxNeighbours,
-                [&](std::size_t neighbour, f32 dx, f32 dy, f32 distanceSquared)
+                px,
+                py,
+                config_.perceptionRadius,
+                config_.maxNeighbours,
+                [&](std::size_t neighbour, f32 dx, f32 dy,
+                    f32 distanceSquared)
                 {
                     if (neighbour == i)
                         return;
 
-                    if (distanceSquared < separationRadiusSquared && distanceSquared > EpsilonSquared)
+                    if (distanceSquared < separationRadiusSquared &&
+                        distanceSquared > EpsilonSquared)
                     {
                         const f32 distance = std::sqrt(distanceSquared);
                         const f32 scale =
@@ -164,19 +150,22 @@ public:
                 ? 1.0f / static_cast<f32>(sameTeamNeighbours)
                 : 0.0f;
 
-            Vec2 separation = limit({ separationX, separationY }, config_.maxForce);
+            Vec2 separation = limit(
+                {separationX, separationY}, config_.maxForce);
             if (sameTeamNeighbours > 0)
             {
                 alignmentX = alignmentX * inverseNeighbours - vx;
                 alignmentY = alignmentY * inverseNeighbours - vy;
             }
-            Vec2 alignment = limit({ alignmentX, alignmentY }, config_.maxForce);
+            Vec2 alignment = limit(
+                {alignmentX, alignmentY}, config_.maxForce);
 
             Vec2 cohesion{
                 cohesionX * inverseNeighbours,
                 cohesionY * inverseNeighbours
             };
-            const f32 cohesionSquared = cohesion.x * cohesion.x + cohesion.y * cohesion.y;
+            const f32 cohesionSquared =
+                cohesion.x * cohesion.x + cohesion.y * cohesion.y;
             if (cohesionSquared > EpsilonSquared)
             {
                 const f32 distance = std::sqrt(cohesionSquared);
@@ -196,22 +185,26 @@ public:
                 separation.y * config_.separationWeight +
                 alignment.y * config_.alignmentWeight +
                 cohesion.y * config_.cohesionWeight;
-            const f32 accelerationSquared = accelerationX * accelerationX + accelerationY * accelerationY;
+            const f32 accelerationSquared =
+                accelerationX * accelerationX + accelerationY * accelerationY;
             if (accelerationSquared > maximumForceSquared)
             {
-                const f32 scale = config_.maxForce / std::sqrt(accelerationSquared);
+                const f32 scale =
+                    config_.maxForce / std::sqrt(accelerationSquared);
                 accelerationX *= scale;
                 accelerationY *= scale;
             }
 
             f32 newVelocityX = vx + accelerationX * dt;
             f32 newVelocityY = vy + accelerationY * dt;
-            const f32 newVelocitySquared = newVelocityX * newVelocityX + newVelocityY * newVelocityY;
+            const f32 newVelocitySquared =
+                newVelocityX * newVelocityX + newVelocityY * newVelocityY;
             if (newVelocitySquared < minimumSpeedSquared)
             {
                 if (newVelocitySquared > EpsilonSquared)
                 {
-                    const f32 scale = minimumSpeed / std::sqrt(newVelocitySquared);
+                    const f32 scale =
+                        minimumSpeed / std::sqrt(newVelocitySquared);
                     newVelocityX *= scale;
                     newVelocityY *= scale;
                 }
@@ -220,7 +213,8 @@ public:
                     const f32 oldVelocitySquared = vx * vx + vy * vy;
                     if (oldVelocitySquared > EpsilonSquared)
                     {
-                        const f32 scale = minimumSpeed / std::sqrt(oldVelocitySquared);
+                        const f32 scale =
+                            minimumSpeed / std::sqrt(oldVelocitySquared);
                         newVelocityX = vx * scale;
                         newVelocityY = vy * scale;
                     }
@@ -232,14 +226,16 @@ public:
                 }
             }
 
-            const f32 finalVelocitySquared = newVelocityX * newVelocityX + newVelocityY * newVelocityY;
+            const f32 finalVelocitySquared =
+                newVelocityX * newVelocityX + newVelocityY * newVelocityY;
             if (finalVelocitySquared > maximumSpeedSquared)
             {
-                const f32 scale = config_.maxSpeed / std::sqrt(finalVelocitySquared);
+                const f32 scale =
+                    config_.maxSpeed / std::sqrt(finalVelocitySquared);
                 newVelocityX *= scale;
                 newVelocityY *= scale;
             }
-            velocities[i] = { newVelocityX, newVelocityY };
+            velocities[i] = {newVelocityX, newVelocityY};
         }
 
         #pragma omp parallel for
@@ -247,18 +243,27 @@ public:
         {
             f32 x = positions[i].x + velocities[i].x * dt;
             f32 y = positions[i].y + velocities[i].y * dt;
-            if (x < 0.0f) x += config_.worldWidth;
-            else if (x >= config_.worldWidth) x -= config_.worldWidth;
-            if (y < 0.0f) y += config_.worldHeight;
-            else if (y >= config_.worldHeight) y -= config_.worldHeight;
-            positions[i] = { x, y };
+            if (x < 0.0f)
+                x += config_.worldWidth;
+            else if (x >= config_.worldWidth)
+                x -= config_.worldWidth;
+            if (y < 0.0f)
+                y += config_.worldHeight;
+            else if (y >= config_.worldHeight)
+                y -= config_.worldHeight;
+            positions[i] = {x, y};
         }
     }
 
     void render(interfaces::backend::IRenderer& renderer)
     {
-        config_.worldWidth = renderer.windowWidth();
-        config_.worldHeight = renderer.windowHeight();
+        const int windowWidth = renderer.windowWidth();
+        const int windowHeight = renderer.windowHeight();
+        if (windowWidth > 0 && windowHeight > 0)
+        {
+            config_.worldWidth = static_cast<f32>(windowWidth);
+            config_.worldHeight = static_cast<f32>(windowHeight);
+        }
 
         auto boids = world_.storage<Boid>();
         auto positions = boids.column<&Boid::position>();
@@ -269,43 +274,72 @@ public:
                 positions[i].x,
                 positions[i].y,
                 TeamColors[teams[i] % TeamColors.size()]);
-        } 
+        }
+    }
+
+private:
+    void spawn()
+    {
+        std::mt19937 rng(config_.randomSeed);
+        std::uniform_real_distribution<f32> positionX(
+            0.0f, config_.worldWidth);
+        std::uniform_real_distribution<f32> positionY(
+            0.0f, config_.worldHeight);
+        std::uniform_real_distribution<f32> angle(0.0f, Pi2);
+
+        for (std::size_t i = 0; i < config_.boidCount; ++i)
+        {
+            auto boid = world_.create<Boid>();
+            const f32 direction = angle(rng);
+            boid.set<&Boid::position>({positionX(rng), positionY(rng)});
+            boid.set<&Boid::velocity>({
+                std::cos(direction) * config_.initialSpeed,
+                std::sin(direction) * config_.initialSpeed
+            });
+            boid.set<&Boid::team>(i % config_.teamCount);
+        }
+    }
+
+    void resizeGridIfNeeded()
+    {
+        if (gridWidth_ == config_.worldWidth &&
+            gridHeight_ == config_.worldHeight)
+        {
+            return;
+        }
+
+        grid_.resize(
+            config_.worldWidth,
+            config_.worldHeight,
+            config_.perceptionRadius);
+        gridWidth_ = config_.worldWidth;
+        gridHeight_ = config_.worldHeight;
     }
 
     simulation::world::World& world_;
-    FlockConfig config_;
-    interfaces::module::ComputeMode computeMode_;
+    FlockConfig& config_;
     UniformGrid grid_;
     f32 gridWidth_ = 0.0f;
     f32 gridHeight_ = 0.0f;
 };
 
-Flock::Flock(simulation::world::World& world, const FlockConfig& config)
+FlockCpuCompute::FlockCpuCompute(
+    simulation::world::World& world,
+    FlockConfig& config)
     : impl_(std::make_unique<Impl>(world, config))
 {
-    setConfig(config);
 }
 
-Flock::~Flock() = default;
+FlockCpuCompute::~FlockCpuCompute() = default;
 
-void Flock::tick(f32 dt)
+void FlockCpuCompute::tick(f32 dt)
 {
     impl_->tick(dt);
 }
 
-void Flock::render(interfaces::backend::IRenderer& renderer)
+void FlockCpuCompute::render(interfaces::backend::IRenderer& renderer)
 {
     impl_->render(renderer);
-}
-
-const FlockConfig& Flock::config() const
-{
-    return impl_->config_;
-}
-
-interfaces::module::ComputeMode Flock::computeMode() const
-{
-    return impl_->computeMode_;
 }
 
 } // namespace emper::module
