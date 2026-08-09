@@ -13,7 +13,7 @@ target_link_libraries(emper-module-uniform-grid PUBLIC
 find_package(OpenMP REQUIRED)
 
 add_library(emper-module-flock
-    flock/flock.cpp
+    flock/Flock.cpp
 )
 
 target_include_directories(emper-module-flock PUBLIC

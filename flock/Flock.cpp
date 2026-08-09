@@ -1,4 +1,4 @@
-#include "flock.h"
+#include "Flock.h"
 
 #include <UniformGrid.h>
 #include <emper/interfaces/backend/IRenderer.h>
@@ -257,6 +257,9 @@ public:
 
     void render(interfaces::backend::IRenderer& renderer)
     {
+        config_.worldWidth = renderer.windowWidth();
+        config_.worldHeight = renderer.windowHeight();
+
         auto boids = world_.storage<Boid>();
         auto positions = boids.column<&Boid::position>();
         auto teams = boids.column<&Boid::team>();
@@ -266,10 +269,7 @@ public:
                 positions[i].x,
                 positions[i].y,
                 TeamColors[teams[i] % TeamColors.size()]);
-        }
-        
-        config_.worldWidth = renderer.windowWidth();
-        config_.worldHeight = renderer.windowHeight();
+        } 
     }
 
     simulation::world::World& world_;
