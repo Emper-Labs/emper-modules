@@ -82,176 +82,485 @@ public:
             return;
 
         auto boids = world_.storage<Boid>();
-        auto positions = boids.column<&Boid::position>();
-        auto velocities = boids.column<&Boid::velocity>();
-        auto teams = boids.column<&Boid::team>();
-        const std::size_t count = boids.size();
+
+        auto positions =
+            boids.column<&Boid::position>();
+
+        auto velocities =
+            boids.column<&Boid::velocity>();
+
+        auto teams =
+            boids.column<&Boid::team>();
+
+        const std::size_t count =
+            boids.size();
+
         if (count == 0)
             return;
 
         resizeGridIfNeeded();
-        grid_.rebuild(positions.data(), count);
+
+        grid_.rebuild(
+            positions.data(),
+            count
+        );
+
+        // ------------------------------------------------------------
+        // Precomputed constants
+        // ------------------------------------------------------------
+
+        const f32 separationRadius =
+            config_.separationRadius;
 
         const f32 separationRadiusSquared =
-            config_.separationRadius * config_.separationRadius;
-        const f32 minimumSpeed = config_.initialSpeed * 0.75f;
-        const f32 minimumSpeedSquared = minimumSpeed * minimumSpeed;
-        const f32 maximumSpeedSquared = config_.maxSpeed * config_.maxSpeed;
-        const f32 maximumForceSquared = config_.maxForce * config_.maxForce;
+            separationRadius *
+            separationRadius;
+
+        const f32 cohesionDeadZone =
+            config_.cohesionDeadZone;
+
+        const f32 cohesionDeadZoneSquared =
+            cohesionDeadZone *
+            cohesionDeadZone;
+
+        const f32 cohesionRadius =
+            config_.cohesionRadius;
+
+        const f32 minimumSpeed =
+            config_.initialSpeed * 0.75f;
+
+        const f32 minimumSpeedSquared =
+            minimumSpeed * minimumSpeed;
+
+        const f32 maximumSpeedSquared =
+            config_.maxSpeed *
+            config_.maxSpeed;
+
+        const f32 maximumForceSquared =
+            config_.maxForce *
+            config_.maxForce;
+
+        // ------------------------------------------------------------
+        // Steering
+        // ------------------------------------------------------------
 
         #pragma omp parallel for
         for (std::size_t i = 0; i < count; ++i)
         {
-            const f32 px = positions[i].x;
-            const f32 py = positions[i].y;
-            const f32 vx = velocities[i].x;
-            const f32 vy = velocities[i].y;
+            const f32 px =
+                positions[i].x;
+
+            const f32 py =
+                positions[i].y;
+
+            const f32 vx =
+                velocities[i].x;
+
+            const f32 vy =
+                velocities[i].y;
+
+            // --------------------------------------------------------
+            // Accumulators
+            // --------------------------------------------------------
+
             f32 separationX = 0.0f;
             f32 separationY = 0.0f;
+
             f32 alignmentX = 0.0f;
             f32 alignmentY = 0.0f;
+
             f32 cohesionX = 0.0f;
             f32 cohesionY = 0.0f;
+
             std::size_t sameTeamNeighbours = 0;
+
+            // --------------------------------------------------------
+            // Neighbour query
+            // --------------------------------------------------------
 
             grid_.query(
                 px,
                 py,
                 config_.perceptionRadius,
                 config_.maxNeighbours,
-                [&](std::size_t neighbour, f32 dx, f32 dy,
+
+                [&](std::size_t neighbour,
+                    f32 dx,
+                    f32 dy,
                     f32 distanceSquared)
                 {
                     if (neighbour == i)
                         return;
 
-                    if (distanceSquared < separationRadiusSquared &&
-                        distanceSquared > EpsilonSquared)
+                    // ------------------------------------------------
+                    // Separation
+                    //
+                    // All boids participate in separation.
+                    // This means different teams still avoid
+                    // occupying the same space.
+                    // ------------------------------------------------
+
+                    if (distanceSquared <
+                            separationRadiusSquared &&
+                        distanceSquared >
+                            EpsilonSquared)
                     {
-                        const f32 distance = std::sqrt(distanceSquared);
+                        const f32 distance =
+                            std::sqrt(
+                                distanceSquared
+                            );
+
                         const f32 scale =
-                            (config_.separationRadius - distance) /
-                            (config_.separationRadius * distance);
-                        separationX -= dx * scale;
-                        separationY -= dy * scale;
+                            (separationRadius - distance) /
+                            (separationRadius * distance);
+
+                        separationX -=
+                            dx * scale;
+
+                        separationY -=
+                            dy * scale;
                     }
 
-                    if (teams[i] == teams[neighbour])
+                    // ------------------------------------------------
+                    // Alignment + Cohesion
+                    //
+                    // Only same-team boids participate.
+                    // ------------------------------------------------
+
+                    if (teams[i] ==
+                        teams[neighbour])
                     {
-                        alignmentX += velocities[neighbour].x;
-                        alignmentY += velocities[neighbour].y;
+                        // Alignment:
+                        // average neighbour velocity
+                        alignmentX +=
+                            velocities[neighbour].x;
+
+                        alignmentY +=
+                            velocities[neighbour].y;
+
+                        // Cohesion:
+                        // average displacement toward
+                        // the centre of the group.
                         cohesionX += dx;
                         cohesionY += dy;
+
                         ++sameTeamNeighbours;
                     }
-                });
+                }
+            );
 
-            const f32 inverseNeighbours = sameTeamNeighbours > 0
-                ? 1.0f / static_cast<f32>(sameTeamNeighbours)
-                : 0.0f;
+            // --------------------------------------------------------
+            // Normalize neighbour contributions
+            // --------------------------------------------------------
 
-            Vec2 separation = limit(
-                {separationX, separationY}, config_.maxForce);
+            const f32 inverseNeighbours =
+                sameTeamNeighbours > 0
+                    ? 1.0f /
+                        static_cast<f32>(
+                            sameTeamNeighbours)
+                    : 0.0f;
+
+            // ========================================================
+            // SEPARATION
+            // ========================================================
+
+            Vec2 separation{
+                separationX,
+                separationY
+            };
+
+            separation =
+                limit(
+                    separation,
+                    config_.maxForce
+                );
+
+            // ========================================================
+            // ALIGNMENT
+            // ========================================================
+
+            Vec2 alignment{
+                0.0f,
+                0.0f
+            };
+
             if (sameTeamNeighbours > 0)
             {
-                alignmentX = alignmentX * inverseNeighbours - vx;
-                alignmentY = alignmentY * inverseNeighbours - vy;
+                // Average velocity of neighbours.
+                const f32 averageVelocityX =
+                    alignmentX *
+                    inverseNeighbours;
+
+                const f32 averageVelocityY =
+                    alignmentY *
+                    inverseNeighbours;
+
+                // Reynolds:
+                //
+                // steering =
+                //     desiredVelocity - currentVelocity
+                //
+                alignmentX =
+                    averageVelocityX - vx;
+
+                alignmentY =
+                    averageVelocityY - vy;
+
+                alignment = limit(
+                    {
+                        alignmentX,
+                        alignmentY
+                    },
+                    config_.maxForce
+                );
             }
-            Vec2 alignment = limit(
-                {alignmentX, alignmentY}, config_.maxForce);
+
+            // ========================================================
+            // COHESION
+            // ========================================================
 
             Vec2 cohesion{
                 cohesionX * inverseNeighbours,
                 cohesionY * inverseNeighbours
             };
-            const f32 cohesionSquared =
-                cohesion.x * cohesion.x + cohesion.y * cohesion.y;
-            if (cohesionSquared > EpsilonSquared)
+
+            const f32 distanceSquared =
+                cohesion.x * cohesion.x +
+                cohesion.y * cohesion.y;
+
+            if (distanceSquared > cohesionDeadZoneSquared)
             {
-                const f32 distance = std::sqrt(cohesionSquared);
-                const f32 desiredSpeed = config_.maxSpeed * std::min(
-                    distance / config_.perceptionRadius, 1.0f);
-                const f32 scale = desiredSpeed / distance;
-                cohesion.x = cohesion.x * scale - vx;
-                cohesion.y = cohesion.y * scale - vy;
-                cohesion = limit(cohesion, config_.maxForce);
+                const f32 distance =
+                    std::sqrt(distanceSquared);
+
+                const f32 distanceOutsideDeadZone =
+                    distance - cohesionDeadZone;
+
+                const f32 normalizedDistance =
+                    std::min(
+                        distanceOutsideDeadZone /
+                            cohesionRadius,
+                        1.0f
+                    );
+
+                const f32 desiredSpeed =
+                    config_.maxSpeed *
+                    normalizedDistance;
+
+                const f32 scale =
+                    desiredSpeed / distance;
+
+                Vec2 desired{
+                    cohesion.x * scale,
+                    cohesion.y * scale
+                };
+
+                cohesion = {
+                    desired.x - vx,
+                    desired.y - vy
+                };
+
+                cohesion = limit(
+                    cohesion,
+                    config_.maxForce
+                );
+            }
+            else
+            {
+                cohesion = {0.0f, 0.0f};
             }
 
+            // ========================================================
+            // COMBINE STEERING FORCES
+            // ========================================================
+
             f32 accelerationX =
-                separation.x * config_.separationWeight +
-                alignment.x * config_.alignmentWeight +
-                cohesion.x * config_.cohesionWeight;
+                separation.x *
+                    config_.separationWeight +
+
+                alignment.x *
+                    config_.alignmentWeight +
+
+                cohesion.x *
+                    config_.cohesionWeight;
+
             f32 accelerationY =
-                separation.y * config_.separationWeight +
-                alignment.y * config_.alignmentWeight +
-                cohesion.y * config_.cohesionWeight;
+                separation.y *
+                    config_.separationWeight +
+
+                alignment.y *
+                    config_.alignmentWeight +
+
+                cohesion.y *
+                    config_.cohesionWeight;
+
+            // --------------------------------------------------------
+            // Global steering-force limit
+            // --------------------------------------------------------
+
             const f32 accelerationSquared =
-                accelerationX * accelerationX + accelerationY * accelerationY;
-            if (accelerationSquared > maximumForceSquared)
+                accelerationX *
+                    accelerationX +
+                accelerationY *
+                    accelerationY;
+
+            if (accelerationSquared >
+                maximumForceSquared)
             {
                 const f32 scale =
-                    config_.maxForce / std::sqrt(accelerationSquared);
+                    config_.maxForce /
+                    std::sqrt(
+                        accelerationSquared
+                    );
+
                 accelerationX *= scale;
                 accelerationY *= scale;
             }
 
-            f32 newVelocityX = vx + accelerationX * dt;
-            f32 newVelocityY = vy + accelerationY * dt;
+            // ========================================================
+            // INTEGRATE VELOCITY
+            // ========================================================
+
+            f32 newVelocityX =
+                vx +
+                accelerationX * dt;
+
+            f32 newVelocityY =
+                vy +
+                accelerationY * dt;
+
+            // ========================================================
+            // MINIMUM SPEED
+            // ========================================================
+
             const f32 newVelocitySquared =
-                newVelocityX * newVelocityX + newVelocityY * newVelocityY;
-            if (newVelocitySquared < minimumSpeedSquared)
+                newVelocityX *
+                    newVelocityX +
+                newVelocityY *
+                    newVelocityY;
+
+            if (newVelocitySquared <
+                minimumSpeedSquared)
             {
-                if (newVelocitySquared > EpsilonSquared)
+                if (newVelocitySquared >
+                    EpsilonSquared)
                 {
                     const f32 scale =
-                        minimumSpeed / std::sqrt(newVelocitySquared);
+                        minimumSpeed /
+                        std::sqrt(
+                            newVelocitySquared
+                        );
+
                     newVelocityX *= scale;
                     newVelocityY *= scale;
                 }
                 else
                 {
-                    const f32 oldVelocitySquared = vx * vx + vy * vy;
-                    if (oldVelocitySquared > EpsilonSquared)
+                    // ------------------------------------------------
+                    // Velocity completely collapsed.
+                    // Restore previous direction if possible.
+                    // ------------------------------------------------
+
+                    const f32 oldVelocitySquared =
+                        vx * vx +
+                        vy * vy;
+
+                    if (oldVelocitySquared >
+                        EpsilonSquared)
                     {
                         const f32 scale =
-                            minimumSpeed / std::sqrt(oldVelocitySquared);
-                        newVelocityX = vx * scale;
-                        newVelocityY = vy * scale;
+                            minimumSpeed /
+                            std::sqrt(
+                                oldVelocitySquared
+                            );
+
+                        newVelocityX =
+                            vx * scale;
+
+                        newVelocityY =
+                            vy * scale;
                     }
                     else
                     {
-                        newVelocityX = config_.initialSpeed;
+                        // Last resort.
+                        newVelocityX =
+                            config_.initialSpeed;
+
                         newVelocityY = 0.0f;
                     }
                 }
             }
 
+            // ========================================================
+            // MAXIMUM SPEED
+            // ========================================================
+
             const f32 finalVelocitySquared =
-                newVelocityX * newVelocityX + newVelocityY * newVelocityY;
-            if (finalVelocitySquared > maximumSpeedSquared)
+                newVelocityX *
+                    newVelocityX +
+                newVelocityY *
+                    newVelocityY;
+
+            if (finalVelocitySquared >
+                maximumSpeedSquared)
             {
                 const f32 scale =
-                    config_.maxSpeed / std::sqrt(finalVelocitySquared);
+                    config_.maxSpeed /
+                    std::sqrt(
+                        finalVelocitySquared
+                    );
+
                 newVelocityX *= scale;
                 newVelocityY *= scale;
             }
-            velocities[i] = {newVelocityX, newVelocityY};
+
+            velocities[i] = {
+                newVelocityX,
+                newVelocityY
+            };
         }
+
+        // ============================================================
+        // INTEGRATE POSITION
+        // ============================================================
 
         #pragma omp parallel for
         for (std::size_t i = 0; i < count; ++i)
         {
-            f32 x = positions[i].x + velocities[i].x * dt;
-            f32 y = positions[i].y + velocities[i].y * dt;
+            f32 x =
+                positions[i].x +
+                velocities[i].x * dt;
+
+            f32 y =
+                positions[i].y +
+                velocities[i].y * dt;
+
+            // --------------------------------------------------------
+            // Toroidal world
+            // --------------------------------------------------------
+
             if (x < 0.0f)
+            {
                 x += config_.worldWidth;
+            }
             else if (x >= config_.worldWidth)
+            {
                 x -= config_.worldWidth;
+            }
+
             if (y < 0.0f)
+            {
                 y += config_.worldHeight;
+            }
             else if (y >= config_.worldHeight)
+            {
                 y -= config_.worldHeight;
-            positions[i] = {x, y};
+            }
+
+            positions[i] = {
+                x,
+                y
+            };
         }
     }
 

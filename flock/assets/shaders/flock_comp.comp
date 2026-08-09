@@ -1,0 +1,667 @@
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+
+// ============================================================
+// Buffers
+// ============================================================
+
+layout(std430, binding = 0) readonly buffer InputBoids
+{
+    vec4 inputStates[];
+};
+
+layout(std430, binding = 1) writeonly buffer OutputBoids
+{
+    vec4 outputStates[];
+};
+
+layout(std430, binding = 2) readonly buffer BoidTeams
+{
+    uint teams[];
+};
+
+layout(std430, binding = 3) buffer CellCounts
+{
+    uint cellCounts[];
+};
+
+layout(std430, binding = 4) buffer CellParticles
+{
+    uint cellParticles[];
+};
+
+
+// ============================================================
+// Uniforms
+// ============================================================
+
+uniform int pass;
+
+uniform int particleCount;
+uniform int maxNeighbours;
+
+uniform int gridColumns;
+uniform int gridRows;
+uniform int maxCellParticles;
+
+uniform float dt;
+
+uniform float worldWidth;
+uniform float worldHeight;
+
+uniform float maxSpeed;
+uniform float maxForce;
+uniform float initialSpeed;
+
+uniform float perceptionRadius;
+uniform float separationRadius;
+
+uniform float cohesionRadius;
+uniform float cohesionDeadZone;
+
+uniform float separationWeight;
+uniform float alignmentWeight;
+uniform float cohesionWeight;
+
+
+// ============================================================
+// Constants
+// ============================================================
+
+const float EPSILON = 1e-6;
+const float EPSILON_SQUARED = 1e-6;
+
+
+// ============================================================
+// Helpers
+// ============================================================
+
+vec2 limitVector(vec2 value, float maximum)
+{
+    float squared = dot(value, value);
+    float maximumSquared = maximum * maximum;
+
+    if (squared > maximumSquared)
+    {
+        value *= maximum * inversesqrt(squared);
+    }
+
+    return value;
+}
+
+
+ivec2 wrapCell(ivec2 cell)
+{
+    cell.x %= gridColumns;
+    cell.y %= gridRows;
+
+    if (cell.x < 0)
+        cell.x += gridColumns;
+
+    if (cell.y < 0)
+        cell.y += gridRows;
+
+    return cell;
+}
+
+
+ivec2 cellOf(vec2 position)
+{
+    return wrapCell(
+        ivec2(
+            floor(position / perceptionRadius)
+        )
+    );
+}
+
+
+int cellIndex(ivec2 cell)
+{
+    return cell.y * gridColumns + cell.x;
+}
+
+
+vec2 toroidalDelta(
+    vec2 from,
+    vec2 to,
+    vec2 halfWorld,
+    vec2 world)
+{
+    vec2 delta = from - to;
+
+    if (delta.x > halfWorld.x)
+        delta.x -= world.x;
+    else if (delta.x < -halfWorld.x)
+        delta.x += world.x;
+
+    if (delta.y > halfWorld.y)
+        delta.y -= world.y;
+    else if (delta.y < -halfWorld.y)
+        delta.y += world.y;
+
+    return delta;
+}
+
+
+// ============================================================
+// PASS 0
+// Clear grid.
+// ============================================================
+
+void clearGrid(uint index)
+{
+    uint cellCount =
+        uint(gridColumns * gridRows);
+
+    if (index < cellCount)
+    {
+        cellCounts[index] = 0u;
+    }
+}
+
+
+// ============================================================
+// PASS 1
+// Build fixed-size grid.
+// ============================================================
+
+void buildGrid(uint index)
+{
+    if (index >= uint(particleCount))
+        return;
+
+    vec2 position =
+        inputStates[index].xy;
+
+    ivec2 cell =
+        cellOf(position);
+
+    int cellId =
+        cellIndex(cell);
+
+    uint slot =
+        atomicAdd(
+            cellCounts[cellId],
+            1u
+        );
+
+    uint capacity =
+        uint(maxCellParticles);
+
+    if (slot < capacity)
+    {
+        uint base =
+            uint(cellId) * capacity;
+
+        cellParticles[base + slot] =
+            index;
+    }
+}
+
+
+// ============================================================
+// PASS 2
+// Simulation.
+// ============================================================
+
+void updateBoid(uint index)
+{
+    if (index >= uint(particleCount))
+        return;
+
+
+    // --------------------------------------------------------
+    // Current state
+    // --------------------------------------------------------
+
+    vec4 current =
+        inputStates[index];
+
+    vec2 position =
+        current.xy;
+
+    vec2 velocity =
+        current.zw;
+
+    uint team =
+        teams[index];
+
+
+    // --------------------------------------------------------
+    // Precomputed constants
+    // --------------------------------------------------------
+
+    float perception =
+        max(perceptionRadius, EPSILON);
+
+    float perceptionSquared =
+        perception * perception;
+
+    float separation =
+        max(separationRadius, EPSILON);
+
+    float separationSquared =
+        separation * separation;
+
+    float cohesion =
+        max(cohesionRadius, EPSILON);
+
+    vec2 world =
+        vec2(
+            worldWidth,
+            worldHeight
+        );
+
+    vec2 halfWorld =
+        world * 0.5;
+
+
+    // --------------------------------------------------------
+    // Accumulators
+    // --------------------------------------------------------
+
+    vec2 separationForce =
+        vec2(0.0);
+
+    vec2 alignment =
+        vec2(0.0);
+
+    vec2 cohesionForce =
+        vec2(0.0);
+
+    int neighbourCount =
+        0;
+
+
+    // --------------------------------------------------------
+    // Center cell
+    // --------------------------------------------------------
+
+    ivec2 centerCell =
+        cellOf(position);
+
+
+    uint capacity =
+        uint(maxCellParticles);
+
+
+    // --------------------------------------------------------
+    // Neighbour search
+    //
+    // Once maxNeighbours is reached, stop EVERYTHING.
+    // --------------------------------------------------------
+
+    bool reachedLimit =
+        false;
+
+    for (int offsetY = -1;
+         offsetY <= 1 && !reachedLimit;
+         ++offsetY)
+    {
+        for (int offsetX = -1;
+             offsetX <= 1 && !reachedLimit;
+             ++offsetX)
+        {
+            ivec2 cell =
+                wrapCell(
+                    centerCell +
+                    ivec2(
+                        offsetX,
+                        offsetY
+                    )
+                );
+
+            uint cellId =
+                uint(cell.y * gridColumns + cell.x);
+
+            uint count =
+                min(
+                    cellCounts[cellId],
+                    capacity
+                );
+
+            uint base =
+                cellId * capacity;
+
+
+            // ------------------------------------------------
+            // Cell scan
+            // ------------------------------------------------
+
+            for (uint i = 0u;
+                 i < count;
+                 ++i)
+            {
+                uint neighbour =
+                    cellParticles[base + i];
+
+
+                if (neighbour == index)
+                    continue;
+
+
+                // --------------------------------------------
+                // One SSBO load.
+                // --------------------------------------------
+
+                vec4 neighbourState =
+                    inputStates[neighbour];
+
+
+                // --------------------------------------------
+                // Distance
+                // --------------------------------------------
+
+                vec2 delta =
+                    toroidalDelta(
+                        neighbourState.xy,
+                        position,
+                        halfWorld,
+                        world
+                    );
+
+                float squared =
+                    dot(delta, delta);
+
+
+                if (squared > perceptionSquared)
+                    continue;
+
+
+                // --------------------------------------------
+                // Separation
+                // --------------------------------------------
+
+                if (squared < separationSquared &&
+                    squared > EPSILON_SQUARED)
+                {
+                    float invDistance =
+                        inversesqrt(squared);
+
+                    float strength =
+                        (
+                            separation * invDistance -
+                            1.0
+                        ) * invDistance;
+
+                    separationForce -=
+                        delta * strength;
+                }
+
+
+                // --------------------------------------------
+                // Alignment / Cohesion
+                // --------------------------------------------
+
+                if (teams[neighbour] == team)
+                {
+                    alignment +=
+                        neighbourState.zw;
+
+                    cohesionForce +=
+                        delta;
+
+                    ++neighbourCount;
+
+
+                    // ----------------------------------------
+                    // HARD neighbour limit.
+                    // ----------------------------------------
+
+                    if (maxNeighbours > 0 &&
+                        neighbourCount >= maxNeighbours)
+                    {
+                        reachedLimit = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+
+    // ========================================================
+    // Separation
+    // ========================================================
+
+    separationForce =
+        limitVector(
+            separationForce,
+            maxForce
+        );
+
+
+    // ========================================================
+    // Alignment + Cohesion
+    // ========================================================
+
+    if (neighbourCount > 0)
+    {
+        float count =
+            float(neighbourCount);
+
+
+        // ----------------------------------------------------
+        // Alignment
+        // ----------------------------------------------------
+
+        alignment =
+            alignment / count -
+            velocity;
+
+        alignment =
+            limitVector(
+                alignment,
+                maxForce
+            );
+
+
+        // ----------------------------------------------------
+        // Cohesion
+        // ----------------------------------------------------
+
+        cohesionForce /=
+            count;
+
+
+        float cohesionDistanceSquared =
+            dot(
+                cohesionForce,
+                cohesionForce
+            );
+
+
+        float deadZoneSquared =
+            cohesionDeadZone *
+            cohesionDeadZone;
+
+
+        if (cohesionDistanceSquared >
+            deadZoneSquared)
+        {
+            float cohesionDistance =
+                sqrt(
+                    cohesionDistanceSquared
+                );
+
+
+            float normalizedDistance =
+                min(
+                    (
+                        cohesionDistance -
+                        cohesionDeadZone
+                    ) / cohesion,
+                    1.0
+                );
+
+
+            vec2 desired =
+                cohesionForce *
+                (
+                    maxSpeed *
+                    normalizedDistance /
+                    cohesionDistance
+                );
+
+
+            cohesionForce =
+                limitVector(
+                    desired - velocity,
+                    maxForce
+                );
+        }
+        else
+        {
+            cohesionForce =
+                vec2(0.0);
+        }
+    }
+
+
+    // ========================================================
+    // Steering
+    // ========================================================
+
+    vec2 acceleration =
+        separationForce * separationWeight +
+        alignment       * alignmentWeight +
+        cohesionForce   * cohesionWeight;
+
+
+    acceleration =
+        limitVector(
+            acceleration,
+            maxForce
+        );
+
+
+    // ========================================================
+    // Velocity
+    // ========================================================
+
+    vec2 nextVelocity =
+        velocity +
+        acceleration * dt;
+
+
+    float minimumSpeed =
+        initialSpeed * 0.75;
+
+
+    float speedSquared =
+        dot(
+            nextVelocity,
+            nextVelocity
+        );
+
+
+    float minimumSpeedSquared =
+        minimumSpeed *
+        minimumSpeed;
+
+
+    if (speedSquared <
+        minimumSpeedSquared)
+    {
+        if (speedSquared >
+            EPSILON_SQUARED)
+        {
+            nextVelocity *=
+                minimumSpeed *
+                inversesqrt(speedSquared);
+        }
+        else
+        {
+            float velocitySquared =
+                dot(
+                    velocity,
+                    velocity
+                );
+
+            if (velocitySquared >
+                EPSILON_SQUARED)
+            {
+                nextVelocity =
+                    velocity *
+                    (
+                        minimumSpeed *
+                        inversesqrt(
+                            velocitySquared
+                        )
+                    );
+            }
+            else
+            {
+                nextVelocity =
+                    vec2(
+                        initialSpeed,
+                        0.0
+                    );
+            }
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // Maximum speed
+    // --------------------------------------------------------
+
+    nextVelocity =
+        limitVector(
+            nextVelocity,
+            maxSpeed
+        );
+
+
+    // ========================================================
+    // Position
+    // ========================================================
+
+    vec2 nextPosition =
+        position +
+        nextVelocity * dt;
+
+
+    nextPosition =
+        mod(
+            nextPosition + world,
+            world
+        );
+
+
+    // ========================================================
+    // Output
+    // ========================================================
+
+    outputStates[index] =
+        vec4(
+            nextPosition,
+            nextVelocity
+        );
+}
+
+
+// ============================================================
+// Entry
+// ============================================================
+
+void main()
+{
+    uint index =
+        gl_GlobalInvocationID.x;
+
+    if (pass == 0)
+    {
+        clearGrid(index);
+    }
+    else if (pass == 1)
+    {
+        buildGrid(index);
+    }
+    else if (pass == 2)
+    {
+        updateBoid(index);
+    }
+}

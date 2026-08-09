@@ -1,0 +1,29 @@
+#version 430 core
+
+layout(std430, binding = 0) readonly buffer Boids {
+    vec4 states[];
+};
+
+layout(std430, binding = 2) readonly buffer Teams {
+    uint teams[];
+};
+
+layout(std430, binding = 5) readonly buffer RenderConfig {
+    vec4 config;
+};
+
+layout(location = 0) out vec3 teamColor;
+
+void main()
+{
+    vec2 normalized = states[gl_VertexID].xy / config.xy;
+    gl_Position = vec4(normalized * 2.0 - 1.0, 0.0, 1.0);
+    gl_PointSize = 1.0;
+
+    const vec3 colors[3] = vec3[3](
+        vec3(1.0, 0.30, 0.30),
+        vec3(0.30, 1.0, 0.53),
+        vec3(0.30, 0.55, 1.0)
+    );
+    teamColor = colors[teams[gl_VertexID] % 3u];
+}
