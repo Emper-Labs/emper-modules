@@ -1,8 +1,12 @@
 #pragma once
 
+#include "FlockFrameStats.h"
+
 #include <emper/ComputeTypes.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <vector>
 
 namespace emper::interfaces::backend
 {
@@ -41,6 +45,21 @@ public:
     void shutdown();
     void tick(f32 dt);
 
+    // Enables per-boid candidate-check counting in pass 4.
+    // Must be set before the first tick (the uniform is cached).
+    void setBenchmarkEnabled(bool enabled) noexcept;
+
+    // Reads back the per-boid candidate-check counts written when
+    // benchmark mode is enabled. Fills `out` with boidCount_ uints.
+    // Returns false if benchmark mode is disabled or the read fails.
+    bool readCandidateCounts(
+        std::vector<std::uint32_t>& out);
+
+    // Fills the average candidates/boid and average neighbours/boid
+    // for the most recent tick. Returns false if benchmark readback
+    // is unavailable.
+    bool lastFrameStats(FlockFrameStats& out) const;
+
     void render(
         interfaces::backend::IRenderer& renderer);
 
@@ -63,38 +82,57 @@ private:
     // =========================================================
     // Boid state
     //
-    // Ping-pong buffers:
+    // Fixed-role buffers (no swap between ticks):
     //
-    //   stateBuffers_[read]  -> current frame
-    //   stateBuffers_[write] -> next frame
+    //   stateBuffers_[0] = persistent integrated state
+    //                      (also the rendered buffer)
+    //   stateBuffers_[1] = per-frame cell-sorted scratch
+    //
+    // Two state-touching passes run in opposite directions each
+    // tick, so a single swap ping-pong does not apply:
+    //
+    //   PASS 3 reads buffer 0 and scatters into buffer 1
+    //          (cell-contiguous order)
+    //   PASS 4 reads buffer 1 (sequential neighbour access)
+    //          and writes integrated results back into buffer 0
     //
     // =========================================================
 
     emper::BufferHandle stateBuffers_[2]{};
 
-    emper::BufferHandle teamBuffer_ = 0;
+    emper::BufferHandle teamBuffers_[2]{};
 
 
     // =========================================================
     // GPU spatial grid
     //
-    // cellCountBuffer_:
+    // cellCountBuffers_[2]:
     //
-    //   Number of boids currently occupying each cell.
+    //   Exact per-cell occupancy (64-bit atomics usage is not
+    //   required).
     //
-    // cellParticleBuffer_:
+    //   cellCountsA (binding 4): occupancy used by the prefix sum.
+    //   cellCountsB (binding 5): counter used by the reorder pass.
     //
-    //   Flat fixed-capacity bucket storage:
+    // cellStartBuffer_:
     //
-    //   cellParticles[
-    //       cell * maxCellParticles + slot
-    //   ]
+    //   cellStart      [cellCount_ + 1]
+    //   cellStart[c]     = first sorted index of cell c
+    //   cellStart[c + 1] = one-past-the-end of cell c
+    //
+    // benchmarkBuffer_:
+    //
+    //   Optional per-boid candidate-check count written during
+    //   pass 4 when benchark mode is enabled. Sized
+    //   [boidCount_] uints; read back to host for statistics.
     //
     // =========================================================
 
-    emper::BufferHandle cellCountBuffer_ = 0;
+    emper::BufferHandle cellCountBuffers_[2]{};
 
-    emper::BufferHandle cellParticleBuffer_ = 0;
+    emper::BufferHandle cellStartBuffer_ = 0;
+
+    emper::BufferHandle benchmarkBuffer_ = 0;
 
 
     // =========================================================
@@ -120,17 +158,11 @@ private:
 
 
     // =========================================================
-    // GPU bucket configuration
+    // Benchmark mode
     // =========================================================
 
-    std::size_t maxCellParticles_ = 1024;
-
-
-    // =========================================================
-    // Ping-pong state
-    // =========================================================
-
-    std::size_t readBufferIndex_ = 0;
+    bool benchmark_ = false;
+    mutable FlockFrameStats lastStats_;
 
 
     // =========================================================
@@ -139,6 +171,7 @@ private:
 
     bool uniformsConfigured_ = false;
     bool initialized_ = false;
+    bool configured_ = false;
 };
 
 } // namespace emper::module

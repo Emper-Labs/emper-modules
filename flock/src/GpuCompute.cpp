@@ -62,26 +62,46 @@ bool FlockGpuCompute::initialize()
             config_.worldHeight / config_.perceptionRadius)));
     cellCount_ = static_cast<std::size_t>(gridColumns_) * gridRows_;
 
+    // Buffer 0 = persistent integrated state (also the rendered buffer).
+    // Buffer 1 = per-frame cell-sorted scratch used only within a tick.
     stateBuffers_[0] = computeBackend_->createBuffer({stateSize});
     stateBuffers_[1] = computeBackend_->createBuffer({stateSize});
-    teamBuffer_ = computeBackend_->createBuffer({teamSize});
-    
-    cellCountBuffer_ =
+    teamBuffers_[0] = computeBackend_->createBuffer({teamSize});
+    teamBuffers_[1] = computeBackend_->createBuffer({teamSize});
+
+    // Two independent per-cell counters:
+    //   [0] occupancy for the prefix sum (pass 1)
+    //   [1] scatter counter for the reorder pass (pass 3)
+    cellCountBuffers_[0] =
+        computeBackend_->createBuffer({
+            cellCount_ * sizeof(std::uint32_t)
+        });
+    cellCountBuffers_[1] =
         computeBackend_->createBuffer({
             cellCount_ * sizeof(std::uint32_t)
         });
 
-    cellParticleBuffer_ =
+    // cellStart has one extra element: the one-past-the-end
+    // boundary for the final cell.
+    cellStartBuffer_ =
         computeBackend_->createBuffer({
-            cellCount_ *
-            maxCellParticles_ *
-            sizeof(std::uint32_t)
+            (cellCount_ + 1) * sizeof(std::uint32_t)
         });
-    
-        renderConfigBuffer_ = computeBackend_->createBuffer(
+
+    // Optional per-boid benchmark counters for pass 4.
+    // Layout: [candidateChecks (boidCount_)] [neighbours (boidCount_)].
+    benchmarkBuffer_ =
+        computeBackend_->createBuffer({
+            2 * boidCount_ * sizeof(std::uint32_t)
+        });
+
+    renderConfigBuffer_ = computeBackend_->createBuffer(
         {sizeof(RenderConfig)});
-    if (!stateBuffers_[0] || !stateBuffers_[1] || !teamBuffer_ ||
-        !cellCountBuffer_ || !cellParticleBuffer_ || !renderConfigBuffer_)
+    if (!stateBuffers_[0] || !stateBuffers_[1] ||
+        !teamBuffers_[0] || !teamBuffers_[1] ||
+        !cellCountBuffers_[0] || !cellCountBuffers_[1] ||
+        !cellStartBuffer_ || !benchmarkBuffer_ ||
+        !renderConfigBuffer_)
     {
         shutdown();
         return false;
@@ -115,7 +135,9 @@ bool FlockGpuCompute::initialize()
         !computeBackend_->writeBuffer(
             stateBuffers_[1], boids.data(), stateSize) ||
         !computeBackend_->writeBuffer(
-            teamBuffer_, teams.data(), teamSize) ||
+            teamBuffers_[0], teams.data(), teamSize) ||
+        !computeBackend_->writeBuffer(
+            teamBuffers_[1], teams.data(), teamSize) ||
         !computeBackend_->writeBuffer(
             renderConfigBuffer_, &renderConfig, sizeof(renderConfig)))
     {
@@ -124,7 +146,6 @@ bool FlockGpuCompute::initialize()
     }
 
     initialized_ = true;
-    readBufferIndex_ = 0;
     return true;
 }
 
@@ -133,20 +154,92 @@ bool FlockGpuCompute::isAvailable() const noexcept
     return initialized_;
 }
 
+void FlockGpuCompute::setBenchmarkEnabled(bool enabled) noexcept
+{
+    benchmark_ = enabled;
+}
+
+bool FlockGpuCompute::readCandidateCounts(
+    std::vector<std::uint32_t>& out)
+{
+    if (!initialized_ || !benchmark_)
+        return false;
+
+    out.resize(boidCount_);
+    return computeBackend_->readBuffer(
+        benchmarkBuffer_,
+        out.data(),
+        boidCount_ * sizeof(std::uint32_t));
+}
+
+bool FlockGpuCompute::lastFrameStats(
+    FlockFrameStats& out) const
+{
+    if (!initialized_ || !benchmark_)
+        return false;
+
+    std::vector<std::uint32_t> data(2 * boidCount_);
+    if (!computeBackend_->readBuffer(
+            benchmarkBuffer_,
+            data.data(),
+            2 * boidCount_ * sizeof(std::uint32_t)))
+    {
+        return false;
+    }
+
+    std::size_t totalCandidates = 0;
+    std::size_t totalNeighbours = 0;
+    std::size_t maxCandidates = 0;
+    std::size_t maxNeighbours = 0;
+
+    for (std::size_t i = 0; i < boidCount_; ++i)
+    {
+        const std::size_t candidates = data[i];
+        const std::size_t neighbours = data[boidCount_ + i];
+
+        totalCandidates += candidates;
+        totalNeighbours += neighbours;
+        maxCandidates = std::max(maxCandidates, candidates);
+        maxNeighbours = std::max(maxNeighbours, neighbours);
+    }
+
+    lastStats_.boidCount = boidCount_;
+    lastStats_.candidateChecks = totalCandidates;
+    lastStats_.neighbours = totalNeighbours;
+    lastStats_.maxCandidatesPerBoid = maxCandidates;
+    lastStats_.maxNeighboursPerBoid = maxNeighbours;
+
+    out = lastStats_;
+    return true;
+}
+
 void FlockGpuCompute::tick(f32 dt)
 {
     if (!initialized_ || dt <= 0.0f)
         return;
 
     // =========================================================
-    // Buffer ping-pong
+    // Fixed buffer roles
+    //
+    // Two state-touching passes run in opposite directions each
+    // tick (reorder followed by update), so a classical single
+    // swap ping-pong does not apply. Instead the two buffers
+    // have FIXED roles:
+    //
+    //   buffer 0 = persistent integrated state
+    //              (also the rendered buffer)
+    //   buffer 1 = per-frame cell-sorted scratch
+    //
+    // Pass 3 reads buffer 0 and writes cell-sorted results
+    // into buffer 1.
+    // Pass 4 reads buffer 1 (sequential neighbour access) and
+    // writes integrated results back into buffer 0.
+    //
+    // No swap happens at the end of the tick.
     // =========================================================
 
-    const std::size_t readIndex =
-        readBufferIndex_;
-
-    const std::size_t writeIndex =
-        1 - readIndex;
+    constexpr std::size_t PersistentIndex = 0;
+    constexpr std::size_t SortedIndex = 1;
 
 
     // =========================================================
@@ -155,12 +248,8 @@ void FlockGpuCompute::tick(f32 dt)
     // These values do not change every frame.
     // =========================================================
 
-    static bool configured = false;
-
-    if (!configured)
+    if (!configured_)
     {
-        constexpr int MaxCellParticles = 1024;
-
         computeBackend_->setUniform1f(
             computeProgram_,
             "worldWidth",
@@ -244,40 +333,11 @@ void FlockGpuCompute::tick(f32 dt)
 
         computeBackend_->setUniform1i(
             computeProgram_,
-            "maxCellParticles",
-            MaxCellParticles);
+            "benchmark",
+            benchmark_ ? 1 : 0);
 
-        configured = true;
+        configured_ = true;
     }
-
-
-    // =========================================================
-    // Per-frame state
-    //
-    // IMPORTANT:
-    // These MUST be rebound every frame because the
-    // ping-pong buffers change.
-    // =========================================================
-
-    computeBackend_->bindStorageBuffer(
-        0,
-        stateBuffers_[readIndex]);
-
-    computeBackend_->bindStorageBuffer(
-        1,
-        stateBuffers_[writeIndex]);
-
-    computeBackend_->bindStorageBuffer(
-        2,
-        teamBuffer_);
-
-    computeBackend_->bindStorageBuffer(
-        3,
-        cellCountBuffer_);
-
-    computeBackend_->bindStorageBuffer(
-        4,
-        cellParticleBuffer_);
 
 
     // dt changes every frame.
@@ -286,6 +346,27 @@ void FlockGpuCompute::tick(f32 dt)
         computeProgram_,
         "dt",
         dt);
+
+
+    // =========================================================
+    // Bindings shared by all passes
+    // =========================================================
+
+    computeBackend_->bindStorageBuffer(
+        4,
+        cellCountBuffers_[0]);
+
+    computeBackend_->bindStorageBuffer(
+        5,
+        cellCountBuffers_[1]);
+
+    computeBackend_->bindStorageBuffer(
+        6,
+        cellStartBuffer_);
+
+    computeBackend_->bindStorageBuffer(
+        7,
+        benchmarkBuffer_);
 
 
     // =========================================================
@@ -302,9 +383,30 @@ void FlockGpuCompute::tick(f32 dt)
 
 
     // =========================================================
+    // State bindings for passes 0-3 (persistent -> sorted)
+    // =========================================================
+
+    computeBackend_->bindStorageBuffer(
+        0,
+        stateBuffers_[PersistentIndex]);
+
+    computeBackend_->bindStorageBuffer(
+        1,
+        stateBuffers_[SortedIndex]);
+
+    computeBackend_->bindStorageBuffer(
+        2,
+        teamBuffers_[PersistentIndex]);
+
+    computeBackend_->bindStorageBuffer(
+        3,
+        teamBuffers_[SortedIndex]);
+
+
+    // =========================================================
     // PASS 0
     //
-    // Clear cell counters.
+    // Clear both cell counters.
     // =========================================================
 
     computeBackend_->setUniform1i(
@@ -326,7 +428,7 @@ void FlockGpuCompute::tick(f32 dt)
     // =========================================================
     // PASS 1
     //
-    // Build spatial grid.
+    // Count boids per cell (exact occupancy).
     // =========================================================
 
     computeBackend_->setUniform1i(
@@ -348,13 +450,41 @@ void FlockGpuCompute::tick(f32 dt)
     // =========================================================
     // PASS 2
     //
-    // Update boids.
+    // Exclusive prefix sum -> cellStart[].
+    //
+    // Single-threaded serial scan; the cell grid is small
+    // (< 4096 cells) so this is effectively free.
     // =========================================================
 
     computeBackend_->setUniform1i(
         computeProgram_,
         "pass",
         2);
+
+    computeBackend_->dispatch(
+        computeProgram_,
+        {
+            1,
+            1,
+            1
+        });
+
+    computeBackend_->memoryBarrier();
+
+
+    // =========================================================
+    // PASS 3
+    //
+    // Scatter boids into cell-contiguous order.
+    //
+    // Reads buffer 0 (persistent state/teams), writes the
+    // reordered layout into buffer 1 (sorted state/teams).
+    // =========================================================
+
+    computeBackend_->setUniform1i(
+        computeProgram_,
+        "pass",
+        3);
 
     computeBackend_->dispatch(
         computeProgram_,
@@ -368,11 +498,53 @@ void FlockGpuCompute::tick(f32 dt)
 
 
     // =========================================================
-    // Swap ping-pong buffers
+    // Rebind state bindings for pass 4 (sorted -> integrated)
+    //
+    // Pass 4 must READ the sorted buffer 1 and WRITE the
+    // integrated result into buffer 0, so the input/output
+    // roles of bindings 0/1 and 2/3 are reversed.
     // =========================================================
 
-    readBufferIndex_ =
-        writeIndex;
+    computeBackend_->bindStorageBuffer(
+        0,
+        stateBuffers_[SortedIndex]);
+
+    computeBackend_->bindStorageBuffer(
+        1,
+        stateBuffers_[PersistentIndex]);
+
+    computeBackend_->bindStorageBuffer(
+        2,
+        teamBuffers_[SortedIndex]);
+
+    computeBackend_->bindStorageBuffer(
+        3,
+        teamBuffers_[PersistentIndex]);
+
+
+    // =========================================================
+    // PASS 4
+    //
+    // Flock + integrate.
+    //
+    // Reads the cell-sorted buffer 1 (sequential neighbour
+    // access), writes integrated results back into buffer 0.
+    // =========================================================
+
+    computeBackend_->setUniform1i(
+        computeProgram_,
+        "pass",
+        4);
+
+    computeBackend_->dispatch(
+        computeProgram_,
+        {
+            boidGroups,
+            1,
+            1
+        });
+
+    computeBackend_->memoryBarrier();
 }
 
 void FlockGpuCompute::render(
@@ -400,8 +572,8 @@ void FlockGpuCompute::render(
     }
 
     pipeline->bindProgram(renderProgram_);
-    pipeline->bindStorageBuffer(0, stateBuffers_[readBufferIndex_]);
-    pipeline->bindStorageBuffer(2, teamBuffer_);
+    pipeline->bindStorageBuffer(0, stateBuffers_[0]);
+    pipeline->bindStorageBuffer(2, teamBuffers_[0]);
     pipeline->bindStorageBuffer(5, renderConfigBuffer_);
     pipeline->drawPoints(static_cast<u32>(boidCount_));
 }
@@ -433,20 +605,31 @@ void FlockGpuCompute::shutdown()
             buffer = 0;
         }
     }
-    if (teamBuffer_)
+    for (auto& buffer : teamBuffers_)
     {
-        computeBackend_->destroyBuffer(teamBuffer_);
-        teamBuffer_ = 0;
+        if (buffer)
+        {
+            computeBackend_->destroyBuffer(buffer);
+            buffer = 0;
+        }
     }
-    if (cellCountBuffer_)
+    for (auto& buffer : cellCountBuffers_)
     {
-        computeBackend_->destroyBuffer(cellCountBuffer_);
-        cellCountBuffer_ = 0;
+        if (buffer)
+        {
+            computeBackend_->destroyBuffer(buffer);
+            buffer = 0;
+        }
     }
-    if (cellParticleBuffer_)
+    if (cellStartBuffer_)
     {
-        computeBackend_->destroyBuffer(cellParticleBuffer_);
-        cellParticleBuffer_ = 0;
+        computeBackend_->destroyBuffer(cellStartBuffer_);
+        cellStartBuffer_ = 0;
+    }
+    if (benchmarkBuffer_)
+    {
+        computeBackend_->destroyBuffer(benchmarkBuffer_);
+        benchmarkBuffer_ = 0;
     }
     if (renderConfigBuffer_)
     {

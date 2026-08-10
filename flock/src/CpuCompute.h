@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FlockFrameStats.h"
+
 #include <emper/Types.h>
 
 #include <memory>
@@ -31,6 +33,10 @@ public:
 
     void tick(f32 dt);
     void render(interfaces::backend::IRenderer& renderer);
+
+    // Fills the average candidates/boid and average neighbours/boid
+    // for the most recent tick.
+    bool lastFrameStats(FlockFrameStats& out) const;
 
 private:
     class Impl;
