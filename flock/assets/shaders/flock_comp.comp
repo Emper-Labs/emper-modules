@@ -88,6 +88,7 @@ uniform float cohesionWeight;
 // ============================================================
 
 const float EPSILON_SQUARED = 1e-6;
+const int MAX_CANDIDATE_CHECKS = 5120; //Có lẽ nên chuyển đổi cơ chế duyệt chứ duyệt nhiều quá đành phải để limit vậy
 
 
 // ============================================================
@@ -209,6 +210,13 @@ void buildGrid(uint index)
         cellCountsA[uint(cellIndex(cell))],
         1u
     );
+
+    // uint maxPerCell = 512;
+    // uint old = atomicAdd(cellCountsA[uint(cellIndex(cell))], 1u);
+    // if (old >= maxPerCell) {
+    //     atomicAdd(cellCountsA[uint(cellIndex(cell))], -1u);
+    //     return; // Bỏ qua con boid này trong lần đếm này (hoặc chuyển xử lý khác)
+    // }
 }
 
 
@@ -428,6 +436,8 @@ void updateBoid(uint index)
 
                 ++candidateChecks;
 
+                if (candidateChecks >= MAX_CANDIDATE_CHECKS)
+                    break;
 
                 // ------------------------------------------------
                 // Load neighbour state.
@@ -761,7 +771,6 @@ void main()
 {
     uint index =
         gl_GlobalInvocationID.x;
-
     if (pass == 0)
     {
         clearGrid(index);

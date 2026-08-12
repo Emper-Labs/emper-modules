@@ -18,6 +18,7 @@ public:
        interfaces::backend::IGPUComputeBackend *gpuBackend)
       : world_(world), config_(config), gpuBackend_(gpuBackend) {
     selectCompute();
+    gpuCompute_->setBenchmarkEnabled(true);
   }
 
   void tick(f32 dt) {

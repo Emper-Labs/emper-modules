@@ -34,7 +34,7 @@ FlockGpuCompute::FlockGpuCompute(
     simulation::world::World& world,
     FlockConfig& config,
     interfaces::backend::IGPUComputeBackend* backend)
-    : world_(world), config_(config), computeBackend_(backend)
+    : world_(world), config_(config), computeBackend_(backend),benchmark_(false)
 {
 }
 
@@ -576,6 +576,37 @@ void FlockGpuCompute::render(
     pipeline->bindStorageBuffer(2, teamBuffers_[0]);
     pipeline->bindStorageBuffer(5, renderConfigBuffer_);
     pipeline->drawPoints(static_cast<u32>(boidCount_));
+
+    if (benchmark_)
+    {
+        FlockFrameStats stats;
+        this->lastFrameStats(stats);
+
+        renderer.drawText(
+            "Candidates: " + std::to_string(stats.candidateChecks),
+            20.0f,
+            60.0f,
+            10.0f);
+
+        renderer.drawText(
+            "Neighbours: " + std::to_string(stats.neighbours),
+            20.0f,
+            72.0f,
+            10.0f);
+
+        renderer.drawText(
+            "Max Candidates: " + std::to_string(stats.maxCandidatesPerBoid),
+            20.0f,
+            84.0f,
+            10.0f);
+
+        renderer.drawText(
+            "Max Neighbours: " + std::to_string(stats.maxNeighboursPerBoid),
+            20.0f,
+            96.0f,
+            10.0f);
+    }
+    
 }
 
 FlockGpuCompute::~FlockGpuCompute()
