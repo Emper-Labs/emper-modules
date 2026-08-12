@@ -6,6 +6,7 @@
 #include <emper/interfaces/backend/IRenderer.h>
 #include <emper/simulation/world/World.h>
 
+#include <atomic>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -139,6 +140,13 @@ public:
         const f32 maximumForceSquared =
             config_.maxForce *
             config_.maxForce;
+
+        // ------------------------------------------------------------
+        // Per-frame stats (accumulated across all threads)
+        // ------------------------------------------------------------
+
+        std::atomic<std::size_t> totalCandidates{0};
+        std::atomic<std::size_t> totalNeighbours{0};
 
         // ------------------------------------------------------------
         // Steering
@@ -571,6 +579,7 @@ public:
         if (windowWidth > 0 && windowHeight > 0)
         {
             config_.worldWidth = static_cast<f32>(windowWidth);
+         
             config_.worldHeight = static_cast<f32>(windowHeight);
         }
 

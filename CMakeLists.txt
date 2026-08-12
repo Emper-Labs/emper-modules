@@ -1,2 +1,2 @@
 ﻿add_subdirectory(flock)
-add_subdirectory(uniform-grid)
+add_subdirectory(spatial)
