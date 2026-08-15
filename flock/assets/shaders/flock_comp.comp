@@ -88,7 +88,7 @@ uniform float cohesionWeight;
 // ============================================================
 
 const float EPSILON_SQUARED = 1e-6;
-const int MAX_CANDIDATE_CHECKS = 5120; //Có lẽ nên chuyển đổi cơ chế duyệt chứ duyệt nhiều quá đành phải để limit vậy
+const int MAX_CANDIDATE_CHECKS = 4096; //Có lẽ nên chuyển đổi cơ chế duyệt chứ duyệt nhiều quá đành phải để limit vậy
 
 
 // ============================================================
@@ -761,11 +761,6 @@ void updateBoid(uint index)
     outputTeams[index] =
         team;
 }
-
-
-// ============================================================
-// Entry
-// ============================================================
 
 void main()
 {

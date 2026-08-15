@@ -12,6 +12,8 @@
 #include <cmath>
 #include <random>
 #include <stdexcept>
+#include <cassert>
+#include <iostream>
 
 namespace emper::module {
 namespace {
@@ -153,8 +155,7 @@ public:
         // ------------------------------------------------------------
 
         #pragma omp parallel for
-        for (std::size_t i = 0; i < count; ++i)
-        {
+       for (long long i = 0; i < static_cast<long long>(count); ++i) {
             const f32 px =
                 positions[i].x;
 
@@ -533,8 +534,7 @@ public:
         // ============================================================
 
         #pragma omp parallel for
-        for (std::size_t i = 0; i < count; ++i)
-        {
+        for (long long i = 0; i < static_cast<long long>(count); ++i) {
             f32 x =
                 positions[i].x +
                 velocities[i].x * dt;
@@ -594,7 +594,7 @@ public:
                 TeamColors[teams[i] % TeamColors.size()]);
         }
     }
-
+    
 private:
     void spawn()
     {
@@ -608,13 +608,24 @@ private:
         for (std::size_t i = 0; i < config_.boidCount; ++i)
         {
             auto boid = world_.create<Boid>();
-            const f32 direction = angle(rng);
+
+            //std::cout << "slot = " << boid.slot() << '\n';
+
             boid.set<&Boid::position>({positionX(rng), positionY(rng)});
+            
+             const f32 direction = angle(rng);
+            //std::cout << "position OK\n";
+
             boid.set<&Boid::velocity>({
                 std::cos(direction) * config_.initialSpeed,
                 std::sin(direction) * config_.initialSpeed
             });
+
+            //std::cout << "velocity OK\n";
+
             boid.set<&Boid::team>(i % config_.teamCount);
+
+            //std::cout << "team OK\n";
         }
     }
 

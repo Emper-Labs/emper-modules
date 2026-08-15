@@ -18,7 +18,7 @@ public:
        interfaces::backend::IGPUComputeBackend *gpuBackend)
       : world_(world), config_(config), gpuBackend_(gpuBackend) {
     selectCompute();
-    gpuCompute_->setBenchmarkEnabled(true);
+    //gpuCompute_->setBenchmarkEnabled(false);
   }
 
   void tick(f32 dt) {
@@ -85,8 +85,6 @@ public:
         return;
       }
     }
-
-    // GPU is currently a skeleton, so Auto and GPU safely fall back to CPU.
     cpuCompute_ = std::make_unique<FlockCpuCompute>(world_, config_);
     computeMode_ = interfaces::module::ComputeMode::CPU;
   }
