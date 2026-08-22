@@ -337,26 +337,28 @@ GameOfLife::countNeighbors(
     std::size_t y
 ) const
 {
-    int count = 0;
+    const std::size_t left =
+        (x == 0) ? m_width - 1 : x - 1;
 
-    for (int dy = -1; dy <= 1; ++dy)
-    {
-        for (int dx = -1; dx <= 1; ++dx)
-        {
-            if (dx == 0 && dy == 0)
-                continue;
+    const std::size_t right =
+        (x + 1 == m_width) ? 0 : x + 1;
 
-            const auto nx =
-                (x + m_width + dx) % m_width;
+    const std::size_t up =
+        (y == 0) ? m_height - 1 : y - 1;
 
-            const auto ny =
-                (y + m_height + dy) % m_height;
+    const std::size_t down =
+        (y + 1 == m_height) ? 0 : y + 1;
 
-            count +=
-                m_current[ny * m_width + nx];
-        }
-    }
+    return
+        m_current[up    * m_width + left]  +
+        m_current[up    * m_width + x]     +
+        m_current[up    * m_width + right] +
 
-    return count;
+        m_current[y     * m_width + left]  +
+        m_current[y     * m_width + right] +
+
+        m_current[down  * m_width + left]  +
+        m_current[down  * m_width + x]     +
+        m_current[down  * m_width + right];
 }
 }
