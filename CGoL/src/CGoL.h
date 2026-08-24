@@ -5,7 +5,7 @@
 namespace emper::module::cgol
 {
 
-using Cell = emper::i8;
+using Cell = emper::u8;
 
 struct CellCoordinate
 {
