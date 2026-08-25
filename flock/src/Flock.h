@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FlockFrameStats.h"
+
 #include <emper/interfaces/module/ISystem.h>
 
 #include <cstddef>
@@ -8,6 +10,10 @@
 
 namespace emper::simulation::world {
 class World;
+}
+
+namespace emper::module {
+struct FlockData;
 }
 
 namespace emper::interfaces::backend {
@@ -47,7 +53,6 @@ struct FlockConfig : interfaces::module::ISystemConfig
 
 class Flock final
     : public interfaces::module::ISystem
-    , public interfaces::behavior::IRenderable
 {
 public:
     Flock(
@@ -61,10 +66,24 @@ public:
     Flock& operator=(const Flock&) = delete;
 
     void tick(f32 dt) override;
-    void render(interfaces::backend::IRenderer& renderer) override;
 
     const FlockConfig& config() const;
     interfaces::module::ComputeMode computeMode() const;
+
+    // Read-only snapshot of the current simulation state. The returned
+    // FlockData is a lightweight view (no copies of CPU state are made).
+    // It is simulation data only and is intended for any consumer
+    // (rendering, analytics, replay, AI, debug UI, networking).
+    FlockData data() const;
+
+    // Fills statistics from the most recent tick. Returns false when no
+    // statistics are available (e.g. CPU mode, or GPU benchmark disabled).
+    bool lastFrameStats(FlockFrameStats& out) const;
+
+    // Synchronizes the simulation's world dimensions with an external
+    // surface size (e.g. the render target). Mirrors the previous
+    // render-time resizing behaviour for CPU mode; harmless otherwise.
+    void synchronizeWorldSize(f32 width, f32 height);
 
 private:
     class Impl;

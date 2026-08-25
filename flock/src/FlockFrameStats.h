@@ -5,8 +5,8 @@
 namespace emper::module {
 
 // Per-frame statistics collected by either the CPU or GPU flock
-// implementation. Used by Flock::Impl::render to print diagnostic
-// metrics alongside the FPS counter.
+// implementation. Consumed by external systems (e.g. a render pass) for
+// diagnostic metrics.
 struct FlockFrameStats
 {
     std::size_t boidCount = 0;

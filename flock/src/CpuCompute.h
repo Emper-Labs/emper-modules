@@ -1,14 +1,11 @@
 #pragma once
 
+#include "FlockData.h"
 #include "FlockFrameStats.h"
 
 #include <emper/Types.h>
 
 #include <memory>
-
-namespace emper::interfaces::backend {
-class IRenderer;
-}
 
 namespace emper::simulation::world {
 class World;
@@ -19,6 +16,7 @@ namespace emper::module {
 struct FlockConfig;
 
 // Owns the CPU-side flock storage, neighbour search and simulation update.
+// This is a pure simulation component: it knows nothing about rendering.
 class FlockCpuCompute final
 {
 public:
@@ -32,10 +30,12 @@ public:
     FlockCpuCompute& operator=(const FlockCpuCompute&) = delete;
 
     void tick(f32 dt);
-    void render(interfaces::backend::IRenderer& renderer);
 
-    // Fills the average candidates/boid and average neighbours/boid
-    // for the most recent tick.
+    // Read-only snapshot of the current CPU simulation state.
+    FlockData data() const;
+
+    // Returns false: CPU mode does not collect per-boid benchmark
+    // statistics on the host.
     bool lastFrameStats(FlockFrameStats& out) const;
 
 private:

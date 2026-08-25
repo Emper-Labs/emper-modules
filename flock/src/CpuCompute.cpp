@@ -3,7 +3,6 @@
 #include "Flock.h"
 
 #include <UniformGrid.h>
-#include <emper/interfaces/backend/IRenderer.h>
 #include <emper/simulation/world/World.h>
 
 #include <atomic>
@@ -20,9 +19,6 @@ namespace {
 
 constexpr f32 Pi2 = 6.28318530718f;
 constexpr f32 EpsilonSquared = 0.000001f;
-constexpr std::array<u32, 3> TeamColors{
-    0xFF4D4DFF, 0x4DFF88FF, 0x4D8DFFFF
-};
 
 struct Boid
 {
@@ -572,27 +568,38 @@ public:
         }
     }
 
-    void render(interfaces::backend::IRenderer& renderer)
+    FlockData data() const
     {
-        const int windowWidth = renderer.windowWidth();
-        const int windowHeight = renderer.windowHeight();
-        if (windowWidth > 0 && windowHeight > 0)
-        {
-            config_.worldWidth = static_cast<f32>(windowWidth);
-         
-            config_.worldHeight = static_cast<f32>(windowHeight);
-        }
+        FlockData result;
+        result.mode = FlockDataMode::CPU;
 
         auto boids = world_.storage<Boid>();
+
         auto positions = boids.column<&Boid::position>();
+        auto velocities = boids.column<&Boid::velocity>();
         auto teams = boids.column<&Boid::team>();
-        for (std::size_t i = 0; i < boids.size(); ++i)
-        {
-            renderer.drawPoint(
-                positions[i].x,
-                positions[i].y,
-                TeamColors[teams[i] % TeamColors.size()]);
-        }
+
+        result.boidCount = positions.size();
+        result.worldWidth = config_.worldWidth;
+        result.worldHeight = config_.worldHeight;
+
+        result.positions = std::span<const Vec2>(
+            positions.data(), positions.size());
+        result.velocities = std::span<const Vec2>(
+            velocities.data(), velocities.size());
+        result.teams = std::span<const std::size_t>(
+            teams.data(), teams.size());
+
+        return result;
+    }
+
+    bool lastFrameStats(FlockFrameStats& out) const
+    {
+        (void)out;
+        // CPU mode does not collect per-boid benchmark statistics on
+        // the host. The simulation still exposes FlockFrameStats through
+        // the GPU path; CPU consumers simply have no metrics available.
+        return false;
     }
     
 private:
@@ -666,9 +673,14 @@ void FlockCpuCompute::tick(f32 dt)
     impl_->tick(dt);
 }
 
-void FlockCpuCompute::render(interfaces::backend::IRenderer& renderer)
+FlockData FlockCpuCompute::data() const
 {
-    impl_->render(renderer);
+    return impl_->data();
+}
+
+bool FlockCpuCompute::lastFrameStats(FlockFrameStats& out) const
+{
+    return impl_->lastFrameStats(out);
 }
 
 } // namespace emper::module

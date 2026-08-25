@@ -3,7 +3,6 @@
 #include "Flock.h"
 
 #include <emper/interfaces/backend/ICompute.h>
-#include <emper/interfaces/backend/IRenderer.h>
 
 #include <cmath>
 #include <random>
@@ -547,66 +546,22 @@ void FlockGpuCompute::tick(f32 dt)
     computeBackend_->memoryBarrier();
 }
 
-void FlockGpuCompute::render(
-    interfaces::backend::IRenderer& renderer)
+FlockData FlockGpuCompute::data() const
 {
-    if (!initialized_)
-        return;
+    FlockData result;
+    result.mode = FlockDataMode::GPU;
+    result.boidCount = boidCount_;
+    result.worldWidth = config_.worldWidth;
+    result.worldHeight = config_.worldHeight;
 
-    auto* pipeline =
-        dynamic_cast<
-            interfaces::backend::IRendererShaderPipeline*
-        >(&renderer);
+    // stateBuffers_[0] is the persistent, integrated boid state (the
+    // buffer a rendering consumer draws). teamBuffers_[0] and
+    // renderConfigBuffer_ accompany it. (index 0 == PersistentIndex)
+    result.stateBuffer = stateBuffers_[0];
+    result.teamBuffer = teamBuffers_[0];
+    result.renderConfigBuffer = renderConfigBuffer_;
 
-    if (!pipeline)
-        return;
-
-    if (!renderProgram_)
-    {
-        renderProgram_ = pipeline->createGraphicsProgram(
-            "assets/shaders/flock_ver.ver",
-            "assets/shaders/flock_frag.frag");
-        if (!renderProgram_)
-            return;
-        renderPipeline_ = pipeline;
-    }
-
-    pipeline->bindProgram(renderProgram_);
-    pipeline->bindStorageBuffer(0, stateBuffers_[0]);
-    pipeline->bindStorageBuffer(2, teamBuffers_[0]);
-    pipeline->bindStorageBuffer(5, renderConfigBuffer_);
-    pipeline->drawPoints(static_cast<u32>(boidCount_));
-
-    if (benchmark_)
-    {
-        FlockFrameStats stats;
-        this->lastFrameStats(stats);
-
-        renderer.drawText(
-            "Candidates: " + std::to_string(stats.candidateChecks),
-            20.0f,
-            60.0f,
-            10.0f);
-
-        renderer.drawText(
-            "Neighbours: " + std::to_string(stats.neighbours),
-            20.0f,
-            72.0f,
-            10.0f);
-
-        renderer.drawText(
-            "Max Candidates: " + std::to_string(stats.maxCandidatesPerBoid),
-            20.0f,
-            84.0f,
-            10.0f);
-
-        renderer.drawText(
-            "Max Neighbours: " + std::to_string(stats.maxNeighboursPerBoid),
-            20.0f,
-            96.0f,
-            10.0f);
-    }
-    
+    return result;
 }
 
 FlockGpuCompute::~FlockGpuCompute()
@@ -619,10 +574,6 @@ void FlockGpuCompute::shutdown()
     if (!computeBackend_)
         return;
 
-    if (renderProgram_ && renderPipeline_)
-        renderPipeline_->destroyProgram(renderProgram_);
-    renderProgram_ = 0;
-    renderPipeline_ = nullptr;
     if (computeProgram_)
     {
         computeBackend_->destroyProgram(computeProgram_);

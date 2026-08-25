@@ -1,12 +1,10 @@
 #include "Flock.h"
 
 #include "CpuCompute.h"
+#include "FlockData.h"
 #include "GpuCompute.h"
 
-#include <emper/interfaces/backend/IRenderer.h>
 #include <emper/simulation/world/World.h>
-
-
 
 namespace emper::module {
 
@@ -26,15 +24,6 @@ public:
       cpuCompute_->tick(dt);
   }
 
-  void render(interfaces::backend::IRenderer &renderer) {
-    if (computeMode_ == interfaces::module::ComputeMode::GPU)
-      gpuCompute_->render(renderer);
-    else
-      cpuCompute_->render(renderer);
-
- 
-  }
-
   void selectCompute() {
     if (config_.mode != interfaces::module::ComputeMode::CPU) {
       gpuCompute_ =
@@ -46,6 +35,25 @@ public:
     }
     cpuCompute_ = std::make_unique<FlockCpuCompute>(world_, config_);
     computeMode_ = interfaces::module::ComputeMode::CPU;
+  }
+
+  FlockData data() const {
+    if (computeMode_ == interfaces::module::ComputeMode::GPU)
+      return gpuCompute_->data();
+    return cpuCompute_->data();
+  }
+
+  bool lastFrameStats(FlockFrameStats &out) const {
+    if (computeMode_ == interfaces::module::ComputeMode::GPU)
+      return gpuCompute_->lastFrameStats(out);
+    return cpuCompute_->lastFrameStats(out);
+  }
+
+  void synchronizeWorldSize(f32 width, f32 height) {
+    if (width <= 0.0f || height <= 0.0f)
+      return;
+    config_.worldWidth = width;
+    config_.worldHeight = height;
   }
 
   simulation::world::World &world_;
@@ -67,8 +75,14 @@ Flock::~Flock() = default;
 
 void Flock::tick(f32 dt) { impl_->tick(dt); }
 
-void Flock::render(interfaces::backend::IRenderer &renderer) {
-  impl_->render(renderer);
+FlockData Flock::data() const { return impl_->data(); }
+
+bool Flock::lastFrameStats(FlockFrameStats &out) const {
+  return impl_->lastFrameStats(out);
+}
+
+void Flock::synchronizeWorldSize(f32 width, f32 height) {
+  impl_->synchronizeWorldSize(width, height);
 }
 
 const FlockConfig &Flock::config() const { return impl_->config_; }

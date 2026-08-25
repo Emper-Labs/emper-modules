@@ -1,5 +1,6 @@
 #pragma once
 
+#include "FlockData.h"
 #include "FlockFrameStats.h"
 
 #include <emper/ComputeTypes.h>
@@ -11,8 +12,6 @@
 namespace emper::interfaces::backend
 {
 class IGPUComputeBackend;
-class IRenderer;
-class IRendererShaderPipeline;
 }
 
 namespace emper::simulation::world
@@ -25,7 +24,7 @@ namespace emper::module
 
 struct FlockConfig;
 
-// GPU implementation using only the engine compute and renderer interfaces.
+// GPU implementation using only the engine compute backend interface.
 class FlockGpuCompute final
 {
 public:
@@ -60,8 +59,8 @@ public:
     // is unavailable.
     bool lastFrameStats(FlockFrameStats& out) const;
 
-    void render(
-        interfaces::backend::IRenderer& renderer);
+    // Read-only snapshot of the current GPU simulation state/resources.
+    FlockData data() const;
 
 private:
     simulation::world::World& world_;
@@ -76,7 +75,6 @@ private:
     // =========================================================
 
     emper::ProgramHandle computeProgram_ = 0;
-    emper::ProgramHandle renderProgram_ = 0;
 
 
     // =========================================================
@@ -140,9 +138,6 @@ private:
     // =========================================================
 
     emper::BufferHandle renderConfigBuffer_ = 0;
-
-    interfaces::backend::IRendererShaderPipeline*
-        renderPipeline_ = nullptr;
 
 
     // =========================================================
