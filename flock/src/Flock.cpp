@@ -6,9 +6,7 @@
 #include <emper/interfaces/backend/IRenderer.h>
 #include <emper/simulation/world/World.h>
 
-#include <chrono>
-#include <iostream>
-#include <memory>
+
 
 namespace emper::module {
 
@@ -34,46 +32,7 @@ public:
     else
       cpuCompute_->render(renderer);
 
-    static auto lastTime = std::chrono::steady_clock::now();
-    static int frames = 0;
-
-    ++frames;
-
-    const auto now = std::chrono::steady_clock::now();
-    const std::chrono::duration<float> elapsed = now - lastTime;
-    
-    static float fps;
-    if (elapsed.count() >= 1.0f)
-    {
-        fps =
-            static_cast<float>(frames) /
-            elapsed.count();
-
-        frames = 0;
-        lastTime = now;
-    }
-    const char* mode =
-        computeMode_ == interfaces::module::ComputeMode::GPU
-            ? "GPU"
-            : "CPU";
-
-    renderer.drawText(
-        std::format("FPS: {}", fps),
-        20.0f,
-        20.0f,
-        10.0f);
-
-    renderer.drawText(
-        std::format("Mode: {}", mode),
-        20.0f,
-        32.0f,
-        10.0f);
-
-    renderer.drawText(
-        std::format("Boids: {}", config_.boidCount),
-        20.0f,
-        44.0f,
-        10.0f);
+ 
   }
 
   void selectCompute() {
