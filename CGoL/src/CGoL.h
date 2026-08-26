@@ -1,6 +1,7 @@
 #include <emper/Emper_Engine.h>
 
 #include <string>
+#include <vector>
 
 namespace emper::module::cgol
 {

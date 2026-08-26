@@ -1,5 +1,3 @@
-find_package(OpenMP REQUIRED)
-
 add_library(emper-module-CGoL
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CGoL.cpp
 )
