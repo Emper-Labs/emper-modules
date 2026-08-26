@@ -308,6 +308,12 @@ GameOfLife::step()
 {
     for (std::size_t y = 0; y < m_height; ++y)
     {
+
+        const std::size_t up =
+                (y == 0) ? m_height - 1 : y - 1;
+
+        const std::size_t down =
+                (y + 1 == m_height) ? 0 : y + 1;
         for (std::size_t x = 0; x < m_width; ++x)
         {
             const std::size_t index =
@@ -323,11 +329,7 @@ GameOfLife::step()
             const std::size_t right =
                 (x + 1 == m_width) ? 0 : x + 1;
 
-            const std::size_t up =
-                (y == 0) ? m_height - 1 : y - 1;
 
-            const std::size_t down =
-                (y + 1 == m_height) ? 0 : y + 1;
 
             const int neighbors =
                 m_current[up    * m_width + left]  +
