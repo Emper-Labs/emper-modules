@@ -130,3 +130,20 @@ FPS: 2356.28
 FPS: 2363.73
 FPS: 2322.71
 //end
+//cpu sparse  universalturingmachine.rle
+admin@fedora:~/projects/Emper-Labs/build/emper-samples/CGoL$ /home/admin/projects/Emper-Labs/build/emper-samples/CGoL/CGoL
+ w:12864 h:12800 rle:assets/patterns/universalturingmachine.rle
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 395.651
+FPS: 450.66
+FPS: 464.738
+FPS: 463.802
+FPS: 474.18
+FPS: 480.033
+FPS: 452.126
+FPS: 451.209
+FPS: 472.932
+FPS: 453.849
+//end
