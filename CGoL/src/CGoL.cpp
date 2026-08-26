@@ -305,44 +305,22 @@ GameOfLife::clear()
 void
 GameOfLife::step()
 {
-    for (std::size_t y = 0; y < m_height; ++y)
+    for (std::size_t y = 1; y < m_height - 1; ++y)
     {
-        const std::size_t up =
-            (y == 0) ? m_height - 1 : y - 1;
+        const auto* rowUp   = &m_current[(y - 1) * m_width];
+        const auto* row     = &m_current[y * m_width];
+        const auto* rowDown = &m_current[(y + 1) * m_width];
+        auto* next          = &m_next[y * m_width];
 
-        const std::size_t down =
-            (y + 1 == m_height) ? 0 : y + 1;
-
-        const auto* rowUp =
-            &m_current[up * m_width];
-
-        const auto* row =
-            &m_current[y * m_width];
-
-        const auto* rowDown =
-            &m_current[down * m_width];
-
-        auto* next =
-            &m_next[y * m_width];
-
-        for (std::size_t x = 0; x < m_width; ++x)
+        for (std::size_t x = 1; x < m_width - 1; ++x)
         {
-            const std::size_t left =
-                (x == 0) ? m_width - 1 : x - 1;
-
-            const std::size_t right =
-                (x + 1 == m_width) ? 0 : x + 1;
-
             const int neighbors =
-                rowUp[left]   + rowUp[x]   + rowUp[right] +
-                row[left]                  + row[right]   +
-                rowDown[left] + rowDown[x] + rowDown[right];
-
-            const bool alive =
-                row[x] != 0;
+                rowUp[x - 1] + rowUp[x] + rowUp[x + 1] +
+                row[x - 1]              + row[x + 1] +
+                rowDown[x - 1] + rowDown[x] + rowDown[x + 1];
 
             next[x] =
-                alive
+                row[x]
                     ? neighbors == 2 || neighbors == 3
                     : neighbors == 3;
         }
