@@ -1,0 +1,70 @@
+// OpenMP & uint8 impl
+for t in 1 2 4 6 8 12; do
+    echo "=== $t threads ==="
+    OMP_NUM_THREADS=$t ./CGoL
+done
+=== 1 threads ===
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 388.238
+FPS: 382.639
+FPS: 388.927
+FPS: 390.483
+FPS: 394.342
+=== 2 threads ===
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 417.812
+FPS: 422.523
+FPS: 422.151
+FPS: 422.687
+FPS: 421.739
+FPS: 423.39
+FPS: 422.266
+FPS: 422.794
+=== 4 threads ===
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 432.355
+FPS: 436.872
+FPS: 428.981
+FPS: 438.57
+FPS: 441.103
+FPS: 420.716
+FPS: 427.317
+=== 6 threads ===
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 401.303
+FPS: 411.834
+FPS: 432.104
+FPS: 438.224
+FPS: 425.625
+FPS: 426.659
+=== 8 threads ===
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 397.614
+FPS: 426.491
+FPS: 408.862
+FPS: 401.02
+FPS: 417.664
+FPS: 411.333
+FPS: 413.287
+FPS: 423.43
+=== 12 threads ===
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 353.517
+FPS: 352.054
+FPS: 352.364
+FPS: 361.516
+FPS: 372.26
+FPS: 369.831
+//end

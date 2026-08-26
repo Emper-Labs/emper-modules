@@ -302,9 +302,12 @@ GameOfLife::clear()
     m_accumulator = 0.0f;
 }
 
+#include <omp.h>
+
 void
 GameOfLife::step()
 {
+    #pragma omp parallel for
     for (std::size_t y = 1; y < m_height - 1; ++y)
     {
         const auto* rowUp   = &m_current[(y - 1) * m_width];
