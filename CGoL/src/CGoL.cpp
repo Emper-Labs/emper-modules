@@ -313,8 +313,33 @@ GameOfLife::step()
             const std::size_t index =
                 y * m_width + x;
 
+
+            // const int neighbors =
+            //     countNeighbors(x, y);
+    
+            const std::size_t left =
+                (x == 0) ? m_width - 1 : x - 1;
+
+            const std::size_t right =
+                (x + 1 == m_width) ? 0 : x + 1;
+
+            const std::size_t up =
+                (y == 0) ? m_height - 1 : y - 1;
+
+            const std::size_t down =
+                (y + 1 == m_height) ? 0 : y + 1;
+
             const int neighbors =
-                countNeighbors(x, y);
+                m_current[up    * m_width + left]  +
+                m_current[up    * m_width + x]     +
+                m_current[up    * m_width + right] +
+
+                m_current[y     * m_width + left]  +
+                m_current[y     * m_width + right] +
+
+                m_current[down  * m_width + left]  +
+                m_current[down  * m_width + x]     +
+                m_current[down  * m_width + right];
 
             const bool alive =
                 m_current[index] != 0;
@@ -329,7 +354,6 @@ GameOfLife::step()
     m_current.swap(m_next);
     ++m_generation;
 }
-
 
 int 
 GameOfLife::countNeighbors(
