@@ -1,4 +1,4 @@
-// OpenMP & uint8 impl
+// OpenMP & uint8 impl & turingmachine.rle
 for t in 1 2 4 6 8 12; do
     echo "=== $t threads ==="
     OMP_NUM_THREADS=$t ./CGoL
@@ -68,7 +68,7 @@ FPS: 361.516
 FPS: 372.26
 FPS: 369.831
 //end
-// OpenMP & packed bit impl
+// OpenMP & packed bit impl & turingmachine.rle
 for t in 1 2 4 6 8 12; do
     echo "=== $t threads ==="
     OMP_NUM_THREADS=$t ./CGoL

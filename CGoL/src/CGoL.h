@@ -19,8 +19,8 @@ struct Pattern
 {
     std::string name;
 
-    emper::i32 width  = 0;
-    emper::i32 height = 0;
+    emper::u32 width  = 0;
+    emper::u32 height = 0;
 
     std::vector<CellCoordinate> cells;
 };

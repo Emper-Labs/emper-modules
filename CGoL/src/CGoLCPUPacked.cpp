@@ -97,7 +97,7 @@ GameOfLifeCPUPacked::getWord(
     ];
 }
 
-
+/*
 void
 GameOfLifeCPUPacked::step()
 {
@@ -117,9 +117,6 @@ GameOfLifeCPUPacked::step()
              word < m_wordsPerRow;
              ++word)
         {
-            /*
-             * Get the current word and its vertical neighbors.
-             */
             const Word rowUp =
                 getWord(up, word);
 
@@ -129,9 +126,6 @@ GameOfLifeCPUPacked::step()
             const Word rowDown =
                 getWord(down, word);
 
-            /*
-             * Get neighboring words for horizontal wrapping.
-             */
             const std::size_t previousWord =
                 (word == 0)
                     ? m_wordsPerRow - 1
@@ -160,13 +154,6 @@ GameOfLifeCPUPacked::step()
             const Word rowDownRight =
                 getWord(down, nextWord);
 
-            /*
-             * Shift left/right while carrying bits
-             * across uint64_t word boundaries.
-             *
-             * Bit 63 of the previous word becomes
-             * the incoming bit for the current word.
-             */
             const Word nw =
                 (rowUp << 1) |
                 (rowUpLeft >> 63);
@@ -197,10 +184,6 @@ GameOfLifeCPUPacked::step()
                 (rowDown >> 1) |
                 (rowDownRight << 63);
 
-            /*
-             * Count eight neighbors for all 64 cells
-             * using bit-sliced addition.
-             */
             BitCount count;
 
             add(count, nw);
@@ -213,14 +196,7 @@ GameOfLifeCPUPacked::step()
             add(count, sw);
             add(count, s);
             add(count, se);
-
-            /*
-             * Conway's Game of Life:
-             *
-             * Alive  + 2 neighbors -> survives
-             * Alive  + 3 neighbors -> survives
-             * Dead   + 3 neighbors -> born
-             */
+            
             const Word survive =
                 row & equal2(count);
 
@@ -241,6 +217,63 @@ GameOfLifeCPUPacked::step()
     ++m_generation;
 }
 
+*/
+
+void
+GameOfLifeCPUPacked::step()
+{
+    for (std::size_t y = 0; y < m_height; ++y)
+    {
+        for (std::size_t word = 0; word < m_wordsPerRow; ++word)
+        {
+            const Word row = getWord(y, word);
+
+            const Word rowUp   = (y == 0)                ? 0 : getWord(y - 1, word);
+            const Word rowDown = (y + 1 == m_height)     ? 0 : getWord(y + 1, word);
+
+            // Hàng xóm ngang (bằng 0 nếu ở biên)
+            const Word rowLeft  = (word == 0)                 ? 0 : getWord(y, word - 1);
+            const Word rowRight = (word + 1 == m_wordsPerRow) ? 0 : getWord(y, word + 1);
+
+            const Word rowUpLeft = (y > 0 && word > 0)                 ? getWord(y - 1, word - 1) : 0;
+            const Word rowUpRight = (y > 0 && word + 1 < m_wordsPerRow) ? getWord(y - 1, word + 1) : 0;
+            const Word rowDownLeft = (y + 1 < m_height && word > 0)     ? getWord(y + 1, word - 1) : 0;
+            const Word rowDownRight = (y + 1 < m_height && word + 1 < m_wordsPerRow)
+                                        ? getWord(y + 1, word + 1) : 0;
+
+     
+            const Word nw = (rowUp << 1) | (rowUpLeft >> 63);
+            const Word n  = rowUp;
+            const Word ne = (rowUp >> 1) | (rowUpRight << 63);
+
+            const Word w = (row << 1) | (rowLeft >> 63);
+            const Word e = (row >> 1) | (rowRight << 63);
+
+            const Word sw = (rowDown << 1) | (rowDownLeft >> 63);
+            const Word s  = rowDown;
+            const Word se = (rowDown >> 1) | (rowDownRight << 63);
+
+            BitCount count;
+            add(count, nw);
+            add(count, n);
+            add(count, ne);
+            add(count, w);
+            add(count, e);
+            add(count, sw);
+            add(count, s);
+            add(count, se);
+
+            const Word survive = row & equal2(count);
+            const Word born    = equal3(count);
+            const Word next    = survive | born;
+
+            m_next[y * m_wordsPerRow + word] = next;
+        }
+    }
+
+    m_current.swap(m_next);
+    ++m_generation;
+}
 
 void
 GameOfLifeCPUPacked::setCell(
@@ -427,7 +460,7 @@ GameOfLifeCPUPacked::render(
         "Conway's Game of Life [CPU Packed]",
         10.0f,
         10.0f,
-        1.0f
+        20.0f
     );
 }
 

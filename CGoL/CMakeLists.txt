@@ -4,6 +4,7 @@ add_library(emper-module-CGoL
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CGoL.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CGoLCPUScalar.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CGoLCPUPacked.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CGoLCPUSparse.cpp
 )
 
 target_include_directories(emper-module-CGoL PUBLIC
