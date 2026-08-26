@@ -302,51 +302,46 @@ GameOfLife::clear()
     m_accumulator = 0.0f;
 }
 
-
-void 
+void
 GameOfLife::step()
 {
     for (std::size_t y = 0; y < m_height; ++y)
     {
-
         const std::size_t up =
-                (y == 0) ? m_height - 1 : y - 1;
+            (y == 0) ? m_height - 1 : y - 1;
 
         const std::size_t down =
-                (y + 1 == m_height) ? 0 : y + 1;
+            (y + 1 == m_height) ? 0 : y + 1;
+
+        const auto* rowUp =
+            &m_current[up * m_width];
+
+        const auto* row =
+            &m_current[y * m_width];
+
+        const auto* rowDown =
+            &m_current[down * m_width];
+
+        auto* next =
+            &m_next[y * m_width];
+
         for (std::size_t x = 0; x < m_width; ++x)
         {
-            const std::size_t index =
-                y * m_width + x;
-
-
-            // const int neighbors =
-            //     countNeighbors(x, y);
-    
             const std::size_t left =
                 (x == 0) ? m_width - 1 : x - 1;
 
             const std::size_t right =
                 (x + 1 == m_width) ? 0 : x + 1;
 
-
-
             const int neighbors =
-                m_current[up    * m_width + left]  +
-                m_current[up    * m_width + x]     +
-                m_current[up    * m_width + right] +
-
-                m_current[y     * m_width + left]  +
-                m_current[y     * m_width + right] +
-
-                m_current[down  * m_width + left]  +
-                m_current[down  * m_width + x]     +
-                m_current[down  * m_width + right];
+                rowUp[left]   + rowUp[x]   + rowUp[right] +
+                row[left]                  + row[right]   +
+                rowDown[left] + rowDown[x] + rowDown[right];
 
             const bool alive =
-                m_current[index] != 0;
+                row[x] != 0;
 
-            m_next[index] =
+            next[x] =
                 alive
                     ? neighbors == 2 || neighbors == 3
                     : neighbors == 3;
