@@ -702,16 +702,16 @@ GameOfLifeCPUSparse::render(
 )
 {
     const float cellWidth =
-        static_cast<float>(
-            renderer.windowWidth()
-        ) /
+        static_cast<float>(renderer.windowWidth()) /
         static_cast<float>(m_width);
 
     const float cellHeight =
-        static_cast<float>(
-            renderer.windowHeight()
-        ) /
+        static_cast<float>(renderer.windowHeight()) /
         static_cast<float>(m_height);
+
+    const bool pointMode =
+        cellWidth < 1.0f ||
+        cellHeight < 1.0f;
 
     for (const auto& [coord, tile] : m_current)
     {
@@ -723,8 +723,7 @@ GameOfLifeCPUSparse::render(
 
         for (std::size_t y = 0; y < TileSize; ++y)
         {
-            Word row =
-                tile.rows[y];
+            Word row = tile.rows[y];
 
             while (row != 0)
             {
@@ -746,17 +745,30 @@ GameOfLifeCPUSparse::render(
                     worldY < static_cast<std::int64_t>(m_height)
                 )
                 {
-                    renderer.drawRect(
-                        static_cast<float>(x) *
+                    const float screenX =
+                        static_cast<float>(x) * cellWidth;
+
+                    const float screenY =
+                        static_cast<float>(worldY) * cellHeight;
+
+                    if (pointMode)
+                    {
+                        renderer.drawPoint(
+                            screenX,
+                            screenY,
+                            0xFFFFFFFF
+                        );
+                    }
+                    else
+                    {
+                        renderer.drawRect(
+                            screenX,
+                            screenY,
                             cellWidth,
-
-                        static_cast<float>(worldY) *
                             cellHeight,
-
-                        cellWidth,
-                        cellHeight,
-                        0xFFFFFFFF
-                    );
+                            0xFFFFFFFF
+                        );
+                    }
                 }
 
                 row &= row - 1;
@@ -771,5 +783,4 @@ GameOfLifeCPUSparse::render(
         20.0f
     );
 }
-
 } // namespace emper::module::cgol

@@ -408,16 +408,16 @@ GameOfLifeCPUPacked::render(
 )
 {
     const float cellWidth =
-        static_cast<float>(
-            renderer.windowWidth()
-        ) /
+        static_cast<float>(renderer.windowWidth()) /
         static_cast<float>(m_width);
 
     const float cellHeight =
-        static_cast<float>(
-            renderer.windowHeight()
-        ) /
+        static_cast<float>(renderer.windowHeight()) /
         static_cast<float>(m_height);
+
+    const bool subpixel =
+        cellWidth < 1.0f ||
+        cellHeight < 1.0f;
 
     for (std::size_t y = 0; y < m_height; ++y)
     {
@@ -439,16 +439,32 @@ GameOfLifeCPUPacked::render(
                 const std::size_t x =
                     wordIndex * 64 + bit;
 
-                // Ignore padding bits in the final word.
                 if (x < m_width)
                 {
-                    renderer.drawRect(
-                        static_cast<float>(x) * cellWidth,
-                        static_cast<float>(y) * cellHeight,
-                        cellWidth,
-                        cellHeight,
-                        0xFFFFFFFF
-                    );
+                    const float screenX =
+                        static_cast<float>(x) * cellWidth;
+
+                    const float screenY =
+                        static_cast<float>(y) * cellHeight;
+
+                    if (subpixel)
+                    {
+                        renderer.drawPoint(
+                            screenX,
+                            screenY,
+                            0xFFFFFFFF
+                        );
+                    }
+                    else
+                    {
+                        renderer.drawRect(
+                            screenX,
+                            screenY,
+                            cellWidth,
+                            cellHeight,
+                            0xFFFFFFFF
+                        );
+                    }
                 }
 
                 word &= word - 1;

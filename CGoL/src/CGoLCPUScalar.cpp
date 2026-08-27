@@ -18,10 +18,10 @@ GameOfLifeCPUScalar::tick(emper::f32 dt)
 }
 
 
-void 
+void
 GameOfLifeCPUScalar::render(
-        emper::interfaces::backend::IRenderer& renderer
-    )
+    emper::interfaces::backend::IRenderer& renderer
+)
 {
     const float cellWidth =
         static_cast<float>(renderer.windowWidth()) /
@@ -31,6 +31,10 @@ GameOfLifeCPUScalar::render(
         static_cast<float>(renderer.windowHeight()) /
         static_cast<float>(m_height);
 
+    const bool subpixel =
+        cellWidth < 1.0f ||
+        cellHeight < 1.0f;
+
     for (std::size_t y = 0; y < m_height; ++y)
     {
         for (std::size_t x = 0; x < m_width; ++x)
@@ -38,13 +42,30 @@ GameOfLifeCPUScalar::render(
             if (!m_current[y * m_width + x])
                 continue;
 
-            renderer.drawRect(
-                static_cast<float>(x) * cellWidth,
-                static_cast<float>(y) * cellHeight,
-                cellWidth,
-                cellHeight,
-                0xFFFFFFFF
-            );
+            const float screenX =
+                static_cast<float>(x) * cellWidth;
+
+            const float screenY =
+                static_cast<float>(y) * cellHeight;
+
+            if (subpixel)
+            {
+                renderer.drawPoint(
+                    screenX,
+                    screenY,
+                    0xFFFFFFFF
+                );
+            }
+            else
+            {
+                renderer.drawRect(
+                    screenX,
+                    screenY,
+                    cellWidth,
+                    cellHeight,
+                    0xFFFFFFFF
+                );
+            }
         }
     }
 

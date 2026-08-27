@@ -147,3 +147,18 @@ FPS: 451.209
 FPS: 472.932
 FPS: 453.849
 //end
+//cpu sparse  digital_clock.rle
+admin@fedora:~/projects/Emper-Labs/build/emper-samples/CGoL$ /home/admin/projects/Emper-Labs/build/emper-samples/CGoL/CGoL
+ w:10176 h:6976 rle:assets/patterns/digital_clock.rle
+OpenGL: 4.6 (Core Profile) Mesa 26.1.6
+GLSL: 4.60
+GPU: AMD Radeon RX 580 2048SP (radeonsi, polaris10, ACO, DRM 3.64, 7.0.12-201.fc44.x86_64)
+FPS: 46.0207
+FPS: 47.6393
+FPS: 47.0701
+FPS: 44.2939
+FPS: 42.6787
+FPS: 40.5217
+FPS: 39.4221
+FPS: 39.5229
+//end
