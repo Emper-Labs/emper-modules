@@ -59,10 +59,35 @@ private:
         ) const noexcept;
     };
 
+    // Per-tile accumulation of the 8 live-neighbour count (b0..b3 are the four
+    // bit-planes of the neighbour counter) plus the previous alive state. Used
+    // to scatter contributions from each non-empty source tile into the 3x3
+    // tile neighbourhood, which is the transpose of the per-candidate evaluate
+    // loop and needs ~9x fewer hash lookups.
+    struct AccTile
+    {
+        std::array<Word, TileWords> c0{};
+        std::array<Word, TileWords> c1{};
+        std::array<Word, TileWords> c2{};
+        std::array<Word, TileWords> c3{};
+        std::array<Word, TileWords> alive{};
+    };
+
     using TileMap =
         std::unordered_map<
             TileCoord,
             Tile,
+            TileCoordHash
+        >;
+
+    // Accumulator map covering the candidate tiles (the union of every
+    // non-empty tile's 3x3 neighbourhood); each entry holds the live-neighbour
+    // count and previous state used to derive the next generation.
+
+    using AccMap =
+        std::unordered_map<
+            TileCoord,
+            AccTile,
             TileCoordHash
         >;
 
@@ -165,6 +190,10 @@ private:
 
     TileMap m_current;
     TileMap m_next;
+
+    // Reused across step() calls so their backing capacity survives between
+    // generations (clear() retains the bucket array).
+    AccMap m_acc;
 
     std::size_t m_generation = 0;
 

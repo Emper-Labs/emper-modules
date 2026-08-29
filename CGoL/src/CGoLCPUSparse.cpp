@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <bit>
 #include <random>
+#include <iostream>
+#include <chrono>
 
 namespace emper::module::cgol
 {
@@ -299,6 +301,12 @@ GameOfLifeCPUSparse::load(
                 offsetY
         );
     }
+
+    std::cout
+    << "tiles=" << m_current.size()
+    << " tileColumns=" << m_tileColumns
+    << " tileRows=" << m_tileRows
+    << '\n';
 }
 
 
@@ -307,6 +315,7 @@ GameOfLifeCPUSparse::clear()
 {
     m_current.clear();
     m_next.clear();
+    m_acc.clear();
 
     m_generation = 0;
     m_accumulator = 0.0f;
@@ -343,359 +352,248 @@ GameOfLifeCPUSparse::randomize(
     }
 }
 
+
 void
 GameOfLifeCPUSparse::step()
 {
-    TileMap next;
-    TileMap candidates;
+    using Clock = std::chrono::steady_clock;
 
-    next.reserve(m_current.size() * 2 + 8);
-    candidates.reserve(m_current.size() * 3 + 8);
+    const auto stepStart = Clock::now();
 
-    /*
-     * Every live tile can affect itself and its
-     * eight neighboring tiles.
-     *
-     * Non-toroidal world:
-     * tiles outside the world are ignored.
-     */
-    for (const auto& [coord, tile] : m_current)
+    m_next.clear();
+    m_acc.clear();
+
+    m_next.reserve(m_current.size() * 2 + 8);
+    m_acc.reserve(m_current.size() * 8 + 16);
+
+    // ------------------------------------------------------------
+    // Scatter phase: for each non-empty source tile, add its live-neighbour
+    // contributions into the 3x3 surrounding candidate tiles. This is the
+    // transpose of the old per-candidate evaluate loop and needs ~9x fewer
+    // hash lookups (each source is read once instead of once per 3x3 that it
+    // participates in).
+    // ------------------------------------------------------------
+
+    std::size_t hashTouches = 0;
+
+    auto acc =
+        [this, &hashTouches](std::int64_t x, std::int64_t y) -> AccTile&
     {
-        if (tile.empty())
-            continue;
-
-        for (std::int64_t dy = -1; dy <= 1; ++dy)
-        {
-            for (std::int64_t dx = -1; dx <= 1; ++dx)
-            {
-                const std::int64_t tileX =
-                    coord.x + dx;
-
-                const std::int64_t tileY =
-                    coord.y + dy;
-
-                if (
-                    tileX < 0 ||
-                    tileY < 0 ||
-                    tileX >= static_cast<std::int64_t>(
-                        m_tileColumns
-                    ) ||
-                    tileY >= static_cast<std::int64_t>(
-                        m_tileRows
-                    )
-                )
-                {
-                    continue;
-                }
-
-                candidates.try_emplace(
-                    TileCoord{
-                        tileX,
-                        tileY
-                    }
-                );
-            }
-        }
-    }
-
-    static constexpr Tile emptyTile{};
-
-    /*
-     * No wrapping.
-     *
-     * Outside the world => nullptr.
-     */
-    auto getTile =
-        [this](std::int64_t x,
-               std::int64_t y) -> const Tile*
-    {
-        return findTile(x, y);
+        ++hashTouches;
+        return m_acc[TileCoord{x, y}];
     };
 
-    for (const auto& [coord, unused] : candidates)
+    auto addRow =
+        [&acc](AccTile& t, std::size_t row, Word value)
     {
-        const Tile* center =
-            getTile(
-                coord.x,
-                coord.y
-            );
+        if (value == 0)
+            return;
 
-        const Tile* up =
-            getTile(
-                coord.x,
-                coord.y - 1
-            );
+        BitCount cnt{
+            t.c0[row],
+            t.c1[row],
+            t.c2[row],
+            t.c3[row]
+        };
 
-        const Tile* down =
-            getTile(
-                coord.x,
-                coord.y + 1
-            );
+        add(cnt, value);
 
-        const Tile* left =
-            getTile(
-                coord.x - 1,
-                coord.y
-            );
+        t.c0[row] = cnt.b0;
+        t.c1[row] = cnt.b1;
+        t.c2[row] = cnt.b2;
+        t.c3[row] = cnt.b3;
+    };
 
-        const Tile* right =
-            getTile(
-                coord.x + 1,
-                coord.y
-            );
+    const std::int64_t cols =
+        static_cast<std::int64_t>(m_tileColumns);
 
-        const Tile* upLeft =
-            getTile(
-                coord.x - 1,
-                coord.y - 1
-            );
+    const std::int64_t rows =
+        static_cast<std::int64_t>(m_tileRows);
 
-        const Tile* upRight =
-            getTile(
-                coord.x + 1,
-                coord.y - 1
-            );
+    for (const auto& [coord, src] : m_current)
+    {
+        if (src.empty())
+            continue;
 
-        const Tile* downLeft =
-            getTile(
-                coord.x - 1,
-                coord.y + 1
-            );
+        const std::int64_t sx = coord.x;
+        const std::int64_t sy = coord.y;
 
-        const Tile* downRight =
-            getTile(
-                coord.x + 1,
-                coord.y + 1
-            );
+        const bool hasUp    = sy > 0;
+        const bool hasDown  = sy + 1 < rows;
+        const bool hasLeft  = sx > 0;
+        const bool hasRight = sx + 1 < cols;
 
-        if (!center)
-            center = &emptyTile;
+        // Self tile: previous alive state + the eight intra-tile neighbours.
+        AccTile& self = acc(sx, sy);
+        for (std::size_t y = 0; y < TileSize; ++y)
+        {
+            const Word row = src.rows[y];
+            const Word n   = (y > 0) ? src.rows[y - 1] : Word{0};
+            const Word s   = (y + 1 < TileSize) ? src.rows[y + 1] : Word{0};
 
-        if (!up)
-            up = &emptyTile;
+            BitCount cnt{
+                self.c0[y],
+                self.c1[y],
+                self.c2[y],
+                self.c3[y]
+            };
 
-        if (!down)
-            down = &emptyTile;
+            add(cnt, n);
+            add(cnt, s);
+            add(cnt, row << 1);
+            add(cnt, row >> 1);
+            add(cnt, n << 1);
+            add(cnt, n >> 1);
+            add(cnt, s << 1);
+            add(cnt, s >> 1);
 
-        if (!left)
-            left = &emptyTile;
+            self.c0[y] = cnt.b0;
+            self.c1[y] = cnt.b1;
+            self.c2[y] = cnt.b2;
+            self.c3[y] = cnt.b3;
+            self.alive[y] = row;
+        }
 
-        if (!right)
-            right = &emptyTile;
+        // Cardinal neighbours.
+        if (hasUp)
+        {
+            AccTile& t = acc(sx, sy - 1);
+            addRow(t, TileSize - 1, src.rows[0]);
+            addRow(t, TileSize - 1, src.rows[0] << 1);
+            addRow(t, TileSize - 1, src.rows[0] >> 1);
+        }
+        if (hasDown)
+        {
+            AccTile& t = acc(sx, sy + 1);
+            addRow(t, 0, src.rows[TileSize - 1]);
+            addRow(t, 0, src.rows[TileSize - 1] << 1);
+            addRow(t, 0, src.rows[TileSize - 1] >> 1);
+        }
+        if (hasLeft)
+        {
+            AccTile& t = acc(sx - 1, sy);
+            for (std::size_t y = 0; y < TileSize; ++y)
+            {
+                const Word c = src.rows[y];
+                addRow(t, y, c << 63);
+                if (y > 0)
+                    addRow(t, y, src.rows[y - 1] << 63);
+                if (y + 1 < TileSize)
+                    addRow(t, y, src.rows[y + 1] << 63);
+            }
+        }
+        if (hasRight)
+        {
+            AccTile& t = acc(sx + 1, sy);
+            for (std::size_t y = 0; y < TileSize; ++y)
+            {
+                const Word c = src.rows[y];
+                addRow(t, y, c >> 63);
+                if (y > 0)
+                    addRow(t, y, src.rows[y - 1] >> 63);
+                if (y + 1 < TileSize)
+                    addRow(t, y, src.rows[y + 1] >> 63);
+            }
+        }
 
-        if (!upLeft)
-            upLeft = &emptyTile;
+        // Diagonal corner contributions.
+        if (hasLeft && hasUp)
+            addRow(acc(sx - 1, sy - 1), TileSize - 1, (src.rows[0] & 1) << 63);
+        if (hasRight && hasUp)
+            addRow(acc(sx + 1, sy - 1), TileSize - 1, src.rows[0] >> 63);
+        if (hasLeft && hasDown)
+            addRow(acc(sx - 1, sy + 1), 0, (src.rows[TileSize - 1] & 1) << 63);
+        if (hasRight && hasDown)
+            addRow(acc(sx + 1, sy + 1), 0, src.rows[TileSize - 1] >> 63);
+    }
 
-        if (!upRight)
-            upRight = &emptyTile;
+    const auto scatterEnd = Clock::now();
 
-        if (!downLeft)
-            downLeft = &emptyTile;
+    // ------------------------------------------------------------
+    // Combine phase: derive each candidate tile's next state from its
+    // accumulated live-neighbour count and previous alive state.
+    // ------------------------------------------------------------
 
-        if (!downRight)
-            downRight = &emptyTile;
-
+    for (auto& [coord, a] : m_acc)
+    {
         Tile result{};
 
         for (std::size_t y = 0; y < TileSize; ++y)
         {
-            const bool firstRow =
-                y == 0;
+            const BitCount cnt{
+                a.c0[y],
+                a.c1[y],
+                a.c2[y],
+                a.c3[y]
+            };
 
-            const bool lastRow =
-                y + 1 == TileSize;
+            const Word alive = a.alive[y];
 
-            const Word row =
-                center->rows[y];
-
-            /*
-             * NORTH
-             */
-            const Word north =
-                firstRow
-                    ? up->rows[TileSize - 1]
-                    : center->rows[y - 1];
-
-            /*
-             * SOUTH
-             */
-            const Word south =
-                lastRow
-                    ? down->rows[0]
-                    : center->rows[y + 1];
-
-            /*
-             * WEST / EAST
-             */
-            const Word west =
-                (row << 1) |
-                (left->rows[y] >> 63);
-
-            const Word east =
-                (row >> 1) |
-                (right->rows[y] << 63);
-
-            /*
-             * NORTH-WEST
-             *
-             * If we are on the first row of this tile,
-             * the source row is the last row of the tile
-             * above.
-             *
-             * Otherwise it is the previous row of center,
-             * and the carry comes from the left tile.
-             */
-            const Word northWest =
-                firstRow
-                    ? (
-                        (up->rows[TileSize - 1] << 1) |
-                        (upLeft->rows[TileSize - 1] >> 63)
-                    )
-                    : (
-                        (center->rows[y - 1] << 1) |
-                        (left->rows[y - 1] >> 63)
-                    );
-
-            /*
-             * NORTH-EAST
-             */
-            const Word northEast =
-                firstRow
-                    ? (
-                        (up->rows[TileSize - 1] >> 1) |
-                        (upRight->rows[TileSize - 1] << 63)
-                    )
-                    : (
-                        (center->rows[y - 1] >> 1) |
-                        (right->rows[y - 1] << 63)
-                    );
-
-            /*
-             * SOUTH-WEST
-             */
-            const Word southWest =
-                lastRow
-                    ? (
-                        (down->rows[0] << 1) |
-                        (downLeft->rows[0] >> 63)
-                    )
-                    : (
-                        (center->rows[y + 1] << 1) |
-                        (left->rows[y + 1] >> 63)
-                    );
-
-            /*
-             * SOUTH-EAST
-             */
-            const Word southEast =
-                lastRow
-                    ? (
-                        (down->rows[0] >> 1) |
-                        (downRight->rows[0] << 63)
-                    )
-                    : (
-                        (center->rows[y + 1] >> 1) |
-                        (right->rows[y + 1] << 63)
-                    );
-
-            /*
-             * Count all eight neighbors.
-             */
-            BitCount count{};
-
-            add(count, northWest);
-            add(count, north);
-            add(count, northEast);
-
-            add(count, west);
-            add(count, east);
-
-            add(count, southWest);
-            add(count, south);
-            add(count, southEast);
-
-            /*
-             * Conway's Game of Life:
-             *
-             * alive + 2 => survive
-             * alive + 3 => survive
-             * dead  + 3 => born
-             */
             result.rows[y] =
-                (row & equal2(count)) |
-                equal3(count);
+                (alive & equal2(cnt)) |
+                equal3(cnt);
         }
 
-        /*
-         * Remove X padding in the final tile.
-         *
-         * Example:
-         *
-         * width = 100
-         *
-         * last tile has only 36 valid bits.
-         */
-        if (
-            coord.x ==
-            static_cast<std::int64_t>(
-                m_tileColumns - 1
-            )
-        )
+        // X boundary
+        if (coord.x == cols - 1)
         {
             for (Word& row : result.rows)
                 row &= m_lastWordMask;
         }
 
-        /*
-         * Remove Y padding in the final tile.
-         *
-         * Example:
-         *
-         * height = 100
-         *
-         * last tile has only 36 valid rows.
-         */
-        if (
-            coord.y ==
-            static_cast<std::int64_t>(
-                m_tileRows - 1
-            )
-        )
+        // Y boundary
+        if (coord.y == rows - 1)
         {
             const std::size_t validRows =
                 m_height % TileSize;
 
             if (validRows != 0)
             {
-                for (
-                    std::size_t y = validRows;
-                    y < TileSize;
-                    ++y
-                )
+                for (std::size_t y = validRows;
+                     y < TileSize;
+                     ++y)
                 {
                     result.rows[y] = 0;
                 }
             }
         }
 
-        /*
-         * Sparse representation:
-         * don't store dead tiles.
-         */
         if (!result.empty())
-        {
-            next.emplace(
-                coord,
-                std::move(result)
-            );
-        }
+            m_next.emplace(coord, std::move(result));
     }
 
-    m_current.swap(next);
-
+    m_current.swap(m_next);
     ++m_generation;
-}
 
+    // ------------------------------------------------------------
+    // Instrumentation
+    // ------------------------------------------------------------
+
+    if (m_generation <= 10 || m_generation % 100 == 0)
+    {
+        const auto now = Clock::now();
+
+        const double scatterMs =
+            std::chrono::duration<double, std::milli>(
+                scatterEnd - stepStart
+            ).count();
+
+        const double stepMs =
+            std::chrono::duration<double, std::milli>(
+                now - stepStart
+            ).count();
+
+        std::cout
+            << "[GoL] gen=" << m_generation
+            << " current=" << m_current.size()
+            << " candidates=" << m_acc.size()
+            << " next=" << m_current.size()
+            << " hashTouches=" << hashTouches
+            << " scatter=" << scatterMs << " ms"
+            << " step=" << stepMs << " ms"
+            << '\n';
+    }
+}
 void
 GameOfLifeCPUSparse::render(
     emper::interfaces::backend::IRenderer& renderer
