@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CGoL.h"
+#include "GameOfLifeData.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +12,6 @@ namespace emper::module::cgol
 
 class GameOfLifeCPUPacked
     : public emper::interfaces::module::ISystem
-    , public emper::interfaces::behavior::IRenderable
 {
 public:
 
@@ -22,9 +22,10 @@ public:
 
     void tick(emper::f32 dt);
 
-    void render(
-        emper::interfaces::backend::IRenderer& renderer
-    ) override;
+    // Read-only snapshot of the current simulation state; aliveCells lists the
+    // live cells. Populated by iterating only the set bits (O(live cells)), so
+    // no full-grid densification occurs. Simulation data only.
+    GameOfLifeData data() const;
 
     void randomize(float probability = 0.15f);
 
@@ -89,6 +90,10 @@ private:
 
     std::vector<Word> m_current;
     std::vector<Word> m_next;
+
+    // Reused destination for the on-demand live-cell snapshot produced by
+    // data(). Populated by iterating only the set bits (O(live cells)).
+    mutable std::vector<CellCoordinate> m_alive;
 
     std::size_t m_generation = 0;
     float m_accumulator = 0.0f;

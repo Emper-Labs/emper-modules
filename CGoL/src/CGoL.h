@@ -5,15 +5,10 @@
 #include <string>
 #include <vector>
 
+#include "GameOfLifeData.h"
 
 namespace emper::module::cgol
 {
-
-struct CellCoordinate
-{
-    emper::i32 x;
-    emper::i32 y;
-};
 
 struct Pattern
 {

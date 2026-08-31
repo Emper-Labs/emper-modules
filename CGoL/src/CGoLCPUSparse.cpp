@@ -3,8 +3,17 @@
 #include <algorithm>
 #include <bit>
 #include <random>
+
+
+//#define DBG
+
+
+#ifdef DBG
+
 #include <iostream>
 #include <chrono>
+
+#endif
 
 namespace emper::module::cgol
 {
@@ -302,11 +311,16 @@ GameOfLifeCPUSparse::load(
         );
     }
 
+    #if DBG
+    
     std::cout
     << "tiles=" << m_current.size()
     << " tileColumns=" << m_tileColumns
     << " tileRows=" << m_tileRows
     << '\n';
+
+    #endif
+    
 }
 
 
@@ -356,9 +370,14 @@ GameOfLifeCPUSparse::randomize(
 void
 GameOfLifeCPUSparse::step()
 {
+
+
+    
+#ifdef DBG
     using Clock = std::chrono::steady_clock;
 
     const auto stepStart = Clock::now();
+#endif
 
     m_next.clear();
     m_acc.clear();
@@ -507,8 +526,9 @@ GameOfLifeCPUSparse::step()
             addRow(acc(sx + 1, sy + 1), 0, src.rows[TileSize - 1] >> 63);
     }
 
+#if DBG
     const auto scatterEnd = Clock::now();
-
+#endif
     // ------------------------------------------------------------
     // Combine phase: derive each candidate tile's next state from its
     // accumulated live-neighbour count and previous alive state.
@@ -568,9 +588,10 @@ GameOfLifeCPUSparse::step()
     // ------------------------------------------------------------
     // Instrumentation
     // ------------------------------------------------------------
-
+ #if DBG
     if (m_generation <= 10 || m_generation % 100 == 0)
     {
+       
         const auto now = Clock::now();
 
         const double scatterMs =
@@ -582,6 +603,7 @@ GameOfLifeCPUSparse::step()
             std::chrono::duration<double, std::milli>(
                 now - stepStart
             ).count();
+            
 
         std::cout
             << "[GoL] gen=" << m_generation
@@ -591,25 +613,27 @@ GameOfLifeCPUSparse::step()
             << " hashTouches=" << hashTouches
             << " scatter=" << scatterMs << " ms"
             << " step=" << stepMs << " ms"
-            << '\n';
+            << '\n';    
+
     }
+                
+    #endif
 }
-void
-GameOfLifeCPUSparse::render(
-    emper::interfaces::backend::IRenderer& renderer
-)
+GameOfLifeData
+GameOfLifeCPUSparse::data() const
 {
-    const float cellWidth =
-        static_cast<float>(renderer.windowWidth()) /
-        static_cast<float>(m_width);
+    GameOfLifeData data;
 
-    const float cellHeight =
-        static_cast<float>(renderer.windowHeight()) /
-        static_cast<float>(m_height);
+    data.width  = m_width;
+    data.height = m_height;
 
-    const bool pointMode =
-        cellWidth < 1.0f ||
-        cellHeight < 1.0f;
+    data.generation = m_generation;
+
+    // The sparse backend stores cells as 64x64 bit-tiles in a hash map; iterate
+    // only the non-empty tiles and bit-scan them to collect the alive cells.
+    // This is O(live cells) — the same cost as the original sparse render loop
+    // — and avoids materializing the (potentially huge) full grid.
+    m_alive.clear();
 
     for (const auto& [coord, tile] : m_current)
     {
@@ -643,30 +667,10 @@ GameOfLifeCPUSparse::render(
                     worldY < static_cast<std::int64_t>(m_height)
                 )
                 {
-                    const float screenX =
-                        static_cast<float>(x) * cellWidth;
-
-                    const float screenY =
-                        static_cast<float>(worldY) * cellHeight;
-
-                    if (pointMode)
-                    {
-                        renderer.drawPoint(
-                            screenX,
-                            screenY,
-                            0xFFFFFFFF
-                        );
-                    }
-                    else
-                    {
-                        renderer.drawRect(
-                            screenX,
-                            screenY,
-                            cellWidth,
-                            cellHeight,
-                            0xFFFFFFFF
-                        );
-                    }
+                    m_alive.push_back({
+                        static_cast<emper::i32>(x),
+                        static_cast<emper::i32>(worldY)
+                    });
                 }
 
                 row &= row - 1;
@@ -674,11 +678,8 @@ GameOfLifeCPUSparse::render(
         }
     }
 
-    renderer.drawText(
-        "Conway's Game of Life [CPU Sparse]",
-        10.0f,
-        10.0f,
-        20.0f
-    );
+    data.aliveCells = m_alive;
+
+    return data;
 }
 } // namespace emper::module::cgol

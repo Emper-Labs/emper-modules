@@ -13,6 +13,5 @@ target_include_directories(emper-module-CGoL PUBLIC
 
 target_link_libraries(emper-module-CGoL PUBLIC
     emper-engine
-    emper-backend-opengl
     OpenMP::OpenMP_CXX
 )

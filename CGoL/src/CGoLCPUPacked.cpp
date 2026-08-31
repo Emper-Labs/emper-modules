@@ -402,22 +402,19 @@ GameOfLifeCPUPacked::clear()
 
 #include <bit>
 
-void
-GameOfLifeCPUPacked::render(
-    emper::interfaces::backend::IRenderer& renderer
-)
+GameOfLifeData
+GameOfLifeCPUPacked::data() const
 {
-    const float cellWidth =
-        static_cast<float>(renderer.windowWidth()) /
-        static_cast<float>(m_width);
+    GameOfLifeData data;
 
-    const float cellHeight =
-        static_cast<float>(renderer.windowHeight()) /
-        static_cast<float>(m_height);
+    data.width  = m_width;
+    data.height = m_height;
 
-    const bool subpixel =
-        cellWidth < 1.0f ||
-        cellHeight < 1.0f;
+    data.generation = m_generation;
+
+    // Iterate only the set bits (alive cells) by scanning the packed words,
+    // producing an O(live cells) list rather than densifying the whole grid.
+    m_alive.clear();
 
     for (std::size_t y = 0; y < m_height; ++y)
     {
@@ -428,8 +425,7 @@ GameOfLifeCPUPacked::render(
              wordIndex < m_wordsPerRow;
              ++wordIndex)
         {
-            Word word =
-                m_current[rowOffset + wordIndex];
+            Word word = m_current[rowOffset + wordIndex];
 
             while (word != 0)
             {
@@ -441,30 +437,10 @@ GameOfLifeCPUPacked::render(
 
                 if (x < m_width)
                 {
-                    const float screenX =
-                        static_cast<float>(x) * cellWidth;
-
-                    const float screenY =
-                        static_cast<float>(y) * cellHeight;
-
-                    if (subpixel)
-                    {
-                        renderer.drawPoint(
-                            screenX,
-                            screenY,
-                            0xFFFFFFFF
-                        );
-                    }
-                    else
-                    {
-                        renderer.drawRect(
-                            screenX,
-                            screenY,
-                            cellWidth,
-                            cellHeight,
-                            0xFFFFFFFF
-                        );
-                    }
+                    m_alive.push_back({
+                        static_cast<emper::i32>(x),
+                        static_cast<emper::i32>(y)
+                    });
                 }
 
                 word &= word - 1;
@@ -472,12 +448,9 @@ GameOfLifeCPUPacked::render(
         }
     }
 
-    renderer.drawText(
-        "Conway's Game of Life [CPU Packed]",
-        10.0f,
-        10.0f,
-        20.0f
-    );
+    data.aliveCells = m_alive;
+
+    return data;
 }
 
 } // namespace emper::module::cgol

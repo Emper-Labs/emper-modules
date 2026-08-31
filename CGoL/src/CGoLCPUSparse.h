@@ -1,22 +1,22 @@
 #pragma once
 
 #include "CGoL.h"
+#include "GameOfLifeData.h"
 
 #include <emper/Emper_Engine.h>
-#include <emper/interfaces/backend/IRenderer.h>
 #include <emper/interfaces/module/ISystem.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 namespace emper::module::cgol
 {
 
 class GameOfLifeCPUSparse
     : public emper::interfaces::module::ISystem
-    , public emper::interfaces::behavior::IRenderable
 {
 public:
 
@@ -100,9 +100,11 @@ public:
 
     void tick(emper::f32 dt);
 
-    void render(
-        emper::interfaces::backend::IRenderer& renderer
-    ) override;
+    // Read-only snapshot of the current simulation state; aliveCells lists the
+    // live cells. Populated by iterating only the non-empty 64x64 tiles
+    // (O(live cells), matching the original sparse render cost) — no full-grid
+    // densification.
+    GameOfLifeData data() const;
 
     void load(
         const Pattern& pattern,
@@ -190,6 +192,11 @@ private:
 
     TileMap m_current;
     TileMap m_next;
+
+    // Reused destination for the on-demand live-cell snapshot produced by
+    // data(). Populated by iterating only the live tiles (O(live cells), the
+    // same cost as the original sparse render loop).
+    mutable std::vector<CellCoordinate> m_alive;
 
     // Reused across step() calls so their backing capacity survives between
     // generations (clear() retains the bucket array).

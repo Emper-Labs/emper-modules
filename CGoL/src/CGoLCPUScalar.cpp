@@ -18,22 +18,21 @@ GameOfLifeCPUScalar::tick(emper::f32 dt)
 }
 
 
-void
-GameOfLifeCPUScalar::render(
-    emper::interfaces::backend::IRenderer& renderer
-)
+GameOfLifeData
+GameOfLifeCPUScalar::data() const
 {
-    const float cellWidth =
-        static_cast<float>(renderer.windowWidth()) /
-        static_cast<float>(m_width);
+    GameOfLifeData data;
 
-    const float cellHeight =
-        static_cast<float>(renderer.windowHeight()) /
-        static_cast<float>(m_height);
+    data.width  = m_width;
+    data.height = m_height;
 
-    const bool subpixel =
-        cellWidth < 1.0f ||
-        cellHeight < 1.0f;
+    data.generation = m_generation;
+
+    // The dense backend stores the whole grid, so collect the alive cells by
+    // scanning it. This is O(width*height) — the same cost as the original
+    // dense render loop, and cheaper than the per-frame dense selection the
+    // prior dense-game-of-life-api would have performed.
+    m_alive.clear();
 
     for (std::size_t y = 0; y < m_height; ++y)
     {
@@ -42,39 +41,16 @@ GameOfLifeCPUScalar::render(
             if (!m_current[y * m_width + x])
                 continue;
 
-            const float screenX =
-                static_cast<float>(x) * cellWidth;
-
-            const float screenY =
-                static_cast<float>(y) * cellHeight;
-
-            if (subpixel)
-            {
-                renderer.drawPoint(
-                    screenX,
-                    screenY,
-                    0xFFFFFFFF
-                );
-            }
-            else
-            {
-                renderer.drawRect(
-                    screenX,
-                    screenY,
-                    cellWidth,
-                    cellHeight,
-                    0xFFFFFFFF
-                );
-            }
+            m_alive.push_back({
+                static_cast<emper::i32>(x),
+                static_cast<emper::i32>(y)
+            });
         }
     }
 
-    renderer.drawText(
-        "Conway's Game of Life",
-        10.0f,
-        10.0f,
-        20.0f
-    );
+    data.aliveCells = m_alive;
+
+    return data;
 }
 
 
