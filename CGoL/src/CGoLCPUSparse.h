@@ -3,7 +3,7 @@
 #include "CGoL.h"
 #include "GameOfLifeData.h"
 
-#include <emper/Emper_Engine.h>
+#include <emper/EmperEngine.h>
 #include <emper/interfaces/module/ISystem.h>
 
 #include <array>
