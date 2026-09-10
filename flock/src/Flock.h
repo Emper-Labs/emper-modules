@@ -65,6 +65,15 @@ public:
     Flock(const Flock&) = delete;
     Flock& operator=(const Flock&) = delete;
 
+    
+    void initialize() override{
+
+    };
+
+    void shutdown() override{
+        
+    };
+    
     void tick(f32 dt) override;
 
     const FlockConfig& config() const;

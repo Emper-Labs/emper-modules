@@ -51,6 +51,14 @@ private:
 
 private:
 
+    void initialize() override{
+
+    };
+
+    void shutdown() override{
+        
+    };
+    
     void step();
 
     static void add(

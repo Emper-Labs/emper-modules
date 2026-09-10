@@ -98,6 +98,14 @@ public:
         std::size_t height
     );
 
+    void initialize() override{
+
+    };
+
+    void shutdown() override{
+        
+    };
+
     void tick(emper::f32 dt);
 
     // Read-only snapshot of the current simulation state; aliveCells lists the
@@ -179,6 +187,7 @@ private:
     ) const;
 
     void step();
+
 
 private:
 

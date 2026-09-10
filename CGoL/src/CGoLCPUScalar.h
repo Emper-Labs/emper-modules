@@ -27,6 +27,14 @@ public:
     {
     }
 
+    void initialize() override{
+
+    };
+
+    void shutdown() override{
+        
+    };
+    
     void tick(emper::f32 dt);
 
     // Read-only snapshot of the current simulation state; aliveCells lists the
