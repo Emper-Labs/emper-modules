@@ -1,0 +1,124 @@
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+// ============================================================
+// Conway's Game of Life compute shader.
+//
+// Every invocation computes the next generation for exactly one
+// cell. The grid is a flat row-major array of uint (0 = dead,
+// 1 = alive):
+//
+//     index = y * width + x
+//
+// Non-toroidal world:
+// coordinates outside the grid are treated as dead.
+//
+// Data flow:
+//
+//   binding 0 : current-generation grid (readonly)
+//   binding 1 : next-generation grid    (writeonly)
+//
+// The host ping-pongs the two buffers between dispatches.
+// ============================================================
+
+layout(std430, binding = 0) readonly buffer InputGrid
+{
+    uint inputGrid[];
+};
+
+layout(std430, binding = 1) writeonly buffer OutputGrid
+{
+    uint outputGrid[];
+};
+
+// ============================================================
+// Uniforms
+// ============================================================
+
+uniform int width;
+uniform int height;
+uniform int cellCount;
+
+// ============================================================
+// Helpers
+// ============================================================
+
+// Non-toroidal neighbour lookup.
+// Coordinates outside the grid are treated as dead.
+uint cellAt(int x, int y)
+{
+    if (x < 0 || x >= width ||
+        y < 0 || y >= height)
+    {
+        return 0u;
+    }
+
+    return inputGrid[
+        uint(y) * uint(width) + uint(x)
+    ];
+}
+
+// ============================================================
+// Main
+// ============================================================
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+
+    if (index >= uint(cellCount))
+        return;
+
+    int x = int(index % uint(width));
+    int y = int(index / uint(width));
+
+    // --------------------------------------------------------
+    // Count the 8 live neighbours.
+    // --------------------------------------------------------
+
+    uint neighbours = 0u;
+
+    for (int dy = -1; dy <= 1; ++dy)
+    {
+        for (int dx = -1; dx <= 1; ++dx)
+        {
+            if (dy == 0 && dx == 0)
+                continue;
+
+            neighbours += cellAt(x + dx, y + dy);
+        }
+    }
+
+    // --------------------------------------------------------
+    // Conway's Game of Life: B3/S23
+    //
+    // Alive:
+    //     survives with exactly 2 or 3 neighbours.
+    //
+    // Dead:
+    //     becomes alive with exactly 3 neighbours.
+    // --------------------------------------------------------
+
+    uint alive = inputGrid[index];
+
+    uint next = 0u;
+
+    if (alive == 1u)
+    {
+        if (neighbours == 2u ||
+            neighbours == 3u)
+        {
+            next = 1u;
+        }
+    }
+    else
+    {
+        if (neighbours == 3u)
+        {
+            next = 1u;
+        }
+    }
+
+    outputGrid[index] = next;
+}
