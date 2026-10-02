@@ -52,7 +52,13 @@ void NewtonSystem::calculateGravity()
 
             Vec3 direction = b.position - a.position;
 
-            f32 distanceSquared = dot(direction, direction);
+            // lim r-> 0, F -> inf :V
+            constexpr f32 softening = 0.01f;
+
+            f32 distanceSquared =
+                dot(direction, direction);
+
+            distanceSquared += softening * softening;
 
             if (distanceSquared == 0.0f)
                 continue;
