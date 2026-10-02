@@ -6,9 +6,10 @@ namespace emper::modules::newton_mechanics
 {
 
 NewtonSystem::NewtonSystem(
-    emper::simulation::world::World& world
+    emper::simulation::world::World& world,
+    f32 gravitationalConstant
 )
-    : m_World(world)
+    : m_World(world), m_G(gravitationalConstant)
 {
 }
 
@@ -68,7 +69,7 @@ void NewtonSystem::calculateGravity()
             Vec3 directionNormalized = direction / distance;
 
             f32 forceMagnitude =
-                G * a.mass * b.mass / distanceSquared;
+                m_G * a.mass * b.mass / distanceSquared;
 
             Vec3 force =
                 directionNormalized * forceMagnitude;

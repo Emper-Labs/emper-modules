@@ -14,7 +14,8 @@ class NewtonSystem : public emper::interfaces::module::ISystem
 {
 public:
     explicit NewtonSystem(
-        emper::simulation::world::World& world
+        emper::simulation::world::World& world,
+        f32 gravitationalConstant = 1.0f
     );
 
     void initialize() override;
@@ -34,7 +35,7 @@ private:
 
     std::vector<objects::Particle> m_Particles;
 
-    static constexpr f32 G = 1.0f;
+    f32 m_G = 1.0f;
 };
 
 }
