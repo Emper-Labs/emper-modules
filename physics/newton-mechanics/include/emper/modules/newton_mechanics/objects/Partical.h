@@ -1,8 +1,8 @@
 #include "emper/Types.h"
 
-namespace emper::module::newton_mechanics::objects
+namespace emper::modules::newton_mechanics::objects
 {
-class Partical
+class Particle
 {
 public:
 
