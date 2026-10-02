@@ -1,7 +1,6 @@
-#include "NewtonSystem.h"
+#include <emper/modules/newton_mechanics/NewtonSystem.h>
 
-
-namespace emper::module::newton_mechanics
+namespace emper::modules::newton_mechanics
 {
 
 

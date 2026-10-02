@@ -1,6 +1,6 @@
 #include "emper/Types.h"
 
-namespace emper::module::newton_mechanics
+namespace emper::module::newton_mechanics::objects
 {
 class Partical
 {

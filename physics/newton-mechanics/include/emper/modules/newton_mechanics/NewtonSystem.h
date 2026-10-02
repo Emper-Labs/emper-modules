@@ -1,7 +1,7 @@
 #include "emper/interfaces/module/ISystem.h"
 #include "emper/simulation/world/World.h"
 
-namespace emper::module::newton_mechanics
+namespace emper::modules::newton_mechanics
 {
 
 class NewtonSystem : public emper::interfaces::module::ISystem
