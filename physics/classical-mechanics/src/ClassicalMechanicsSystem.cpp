@@ -1,11 +1,12 @@
-#include "emper/modules/newton_mechanics/NewtonSystem.h"
+#include "emper/modules/classical-mechanics/ClassicalMechanicsSystem.h"
+
 
 #include <cmath>
 
-namespace emper::modules::newton_mechanics
+namespace emper::modules::classical_mechanics
 {
 
-NewtonSystem::NewtonSystem(
+ClassicalMechanicsSystem::ClassicalMechanicsSystem(
     emper::simulation::world::World& world,
     f32 gravitationalConstant
 )
@@ -13,31 +14,31 @@ NewtonSystem::NewtonSystem(
 {
 }
 
-void NewtonSystem::initialize()
+void ClassicalMechanicsSystem::initialize()
 {
 }
 
-void NewtonSystem::tick(f32 dt)
+void ClassicalMechanicsSystem::tick(f32 dt)
 {
     calculateGravity();
     integrate(dt);
 }
 
-void NewtonSystem::shutdown()
+void ClassicalMechanicsSystem::shutdown()
 {
 }
 
-void NewtonSystem::addObject(const objects::Particle& particle)
+void ClassicalMechanicsSystem::addObject(const objects::Particle& particle)
 {
     m_Particles.push_back(particle);
 }
 
-const std::vector<objects::Particle>& NewtonSystem::particles() const
+const std::vector<objects::Particle>& ClassicalMechanicsSystem::particles() const
 {
     return m_Particles;
 }
 
-void NewtonSystem::calculateGravity()
+void ClassicalMechanicsSystem::calculateGravity()
 {
     for (auto& particle : m_Particles)
     {
@@ -80,7 +81,7 @@ void NewtonSystem::calculateGravity()
     }
 }
 
-void NewtonSystem::integrate(f32 dt)
+void ClassicalMechanicsSystem::integrate(f32 dt)
 {
     for (auto& particle : m_Particles)
     {

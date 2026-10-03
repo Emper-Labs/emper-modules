@@ -3,17 +3,17 @@
 #include "emper/interfaces/module/ISystem.h"
 #include "emper/simulation/world/World.h"
 
-#include "emper/modules/newton_mechanics/objects/Partical.h"
+#include <emper/modules/classical-mechanics/objects/Particle.h>
 
 #include <vector>
 
-namespace emper::modules::newton_mechanics
+namespace emper::modules::classical_mechanics
 {
 
-class NewtonSystem : public emper::interfaces::module::ISystem
+class ClassicalMechanicsSystem : public emper::interfaces::module::ISystem
 {
 public:
-    explicit NewtonSystem(
+    explicit ClassicalMechanicsSystem(
         emper::simulation::world::World& world,
         f32 gravitationalConstant = 1.0f
     );

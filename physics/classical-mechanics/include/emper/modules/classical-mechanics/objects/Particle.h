@@ -1,6 +1,6 @@
 #include "emper/Types.h"
 
-namespace emper::modules::newton_mechanics::objects
+namespace emper::modules::classical_mechanics::objects
 {
 class Particle
 {

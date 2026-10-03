@@ -1,1 +1,1 @@
-add_subdirectory(newton-mechanics)
+add_subdirectory(classical-mechanics)
